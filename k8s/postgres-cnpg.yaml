@@ -1,0 +1,46 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-cnpg
+  namespace: siesta
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16-alpine
+
+  bootstrap:
+    initdb:
+      database: siesta
+      owner: siesta
+      secret:
+        name: siesta-secret
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        - CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+  postgresql:
+    parameters:
+      shared_buffers: "128MB"
+      work_mem: "8MB"
+      effective_cache_size: "256MB"
+      maintenance_work_mem: "64MB"
+      max_connections: "100"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      wal_buffers: "4MB"
+      log_min_duration_statement: "1000"
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  storage:
+    size: 10Gi
+    storageClass: standard-rwo
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname

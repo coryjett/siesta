@@ -6,7 +6,6 @@ metadata:
 data:
   NODE_ENV: production
   PORT: "3000"
-  DATABASE_URL: postgresql://siesta:siesta@postgres:5432/siesta
   REDIS_URL: redis://redis:6379
   AUTH_MODE: dev-bypass
   APP_URL: http://34.60.158.138
