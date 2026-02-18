@@ -1,0 +1,25 @@
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Copy server build
+COPY apps/server/dist ./apps/server/dist
+COPY apps/server/package.json ./apps/server/
+
+# Copy shared build
+COPY packages/shared/dist ./packages/shared/dist
+COPY packages/shared/package.json ./packages/shared/
+
+# Copy web build (served by Fastify)
+COPY apps/web/dist ./apps/web/dist
+
+# Copy root package files
+COPY package.json ./
+COPY package-lock.json ./
+
+# Install production dependencies + tsx for ESM module resolution
+RUN npm ci --omit=dev --workspace=apps/server --workspace=packages/shared && \
+    npm install --no-save tsx
+
+EXPOSE 3000
+CMD ["node", "--import", "tsx/esm", "apps/server/dist/index.js"]

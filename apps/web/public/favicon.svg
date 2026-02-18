@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Sombrero brim -->
+  <ellipse cx="32" cy="42" rx="30" ry="10" fill="#D2691E" />
+  <ellipse cx="32" cy="40" rx="30" ry="10" fill="#E8983E" />
+  <!-- Brim highlight -->
+  <ellipse cx="32" cy="39" rx="28" ry="8" fill="none" stroke="#F4B760" stroke-width="1.5" />
+  <!-- Hat dome -->
+  <ellipse cx="32" cy="40" rx="14" ry="6" fill="#C0772B" />
+  <path d="M18 40 Q18 14 32 10 Q46 14 46 40" fill="#E8983E" />
+  <path d="M20 40 Q20 16 32 12 Q44 16 44 40" fill="#F0A848" />
+  <!-- Dome highlight -->
+  <path d="M24 38 Q24 20 32 16 Q36 18 38 24" fill="none" stroke="#F4C87A" stroke-width="1" opacity="0.6" />
+  <!-- Hat band -->
+  <rect x="18" y="36" width="28" height="4" rx="2" fill="#C0392B" />
+  <!-- Band zigzag pattern -->
+  <polyline points="19,37 21,39 23,37 25,39 27,37 29,39 31,37 33,39 35,37 37,39 39,37 41,39 43,37 45,39" fill="none" stroke="#F1C40F" stroke-width="1" />
+  <!-- Brim edge decoration -->
+  <ellipse cx="32" cy="40" rx="28" ry="9" fill="none" stroke="#C0392B" stroke-width="0.8" stroke-dasharray="3,3" />
+</svg>

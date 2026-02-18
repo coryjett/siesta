@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: siesta
+  namespace: siesta
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: siesta
+  template:
+    metadata:
+      labels:
+        app: siesta
+    spec:
+      containers:
+        - name: siesta
+          image: us-central1-docker.pkg.dev/field-engineering-us/siesta/siesta:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: siesta-config
+            - secretRef:
+                name: siesta-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: siesta
+  namespace: siesta
+spec:
+  type: LoadBalancer
+  selector:
+    app: siesta
+  ports:
+    - port: 80
+      targetPort: 3000
