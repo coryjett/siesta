@@ -100,7 +100,7 @@ export default function CallCard({ call, className, onClick }: CallCardProps) {
                 <Link
                   to="/accounts/$accountId"
                   params={{ accountId: call.accountId }}
-                  className="text-indigo-600 hover:text-indigo-800"
+                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {call.accountName}
@@ -118,7 +118,7 @@ export default function CallCard({ call, className, onClick }: CallCardProps) {
                 <Link
                   to="/opportunities/$opportunityId"
                   params={{ opportunityId: call.opportunityId }}
-                  className="text-indigo-600 hover:text-indigo-800"
+                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {call.opportunityName}

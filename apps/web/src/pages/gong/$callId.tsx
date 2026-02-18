@@ -53,12 +53,12 @@ export default function CallDetailPage() {
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {internalParticipants.length > 0 && (
                 <div>
-                  <h4 className="mb-2 text-sm font-semibold text-blue-700">
+                  <h4 className="mb-2 text-sm font-semibold text-blue-700 dark:text-blue-400">
                     Internal ({internalParticipants.length})
                   </h4>
                   <ul className="space-y-1">
                     {internalParticipants.map((p, i) => (
-                      <li key={i} className="text-sm text-gray-700">
+                      <li key={i} className="text-sm text-gray-700 dark:text-gray-300">
                         {p.name}
                         {p.email && (
                           <span className="ml-2 text-gray-400">{p.email}</span>
@@ -70,12 +70,12 @@ export default function CallDetailPage() {
               )}
               {externalParticipants.length > 0 && (
                 <div>
-                  <h4 className="mb-2 text-sm font-semibold text-gray-600">
+                  <h4 className="mb-2 text-sm font-semibold text-gray-600 dark:text-gray-400">
                     External ({externalParticipants.length})
                   </h4>
                   <ul className="space-y-1">
                     {externalParticipants.map((p, i) => (
-                      <li key={i} className="text-sm text-gray-700">
+                      <li key={i} className="text-sm text-gray-700 dark:text-gray-300">
                         {p.name}
                         {p.email && (
                           <span className="ml-2 text-gray-400">{p.email}</span>
@@ -133,10 +133,10 @@ export default function CallDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
           {call.title || 'Untitled Call'}
         </h1>
-        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
           <span>{formatDate(call.started)}</span>
           <span>{formatDuration(call.duration)}</span>
           {call.media && (
@@ -152,24 +152,24 @@ export default function CallDetailPage() {
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
           {call.accountName && call.accountId && (
-            <span className="inline-flex items-center gap-1 text-gray-600">
-              <span className="font-medium text-gray-500">Account:</span>
+            <span className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400">
+              <span className="font-medium text-gray-500 dark:text-gray-400">Account:</span>
               <Link
                 to="/accounts/$accountId"
                 params={{ accountId: call.accountId }}
-                className="text-indigo-600 hover:text-indigo-800"
+                className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
               >
                 {call.accountName}
               </Link>
             </span>
           )}
           {call.opportunityName && call.opportunityId && (
-            <span className="inline-flex items-center gap-1 text-gray-600">
-              <span className="font-medium text-gray-500">Opportunity:</span>
+            <span className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400">
+              <span className="font-medium text-gray-500 dark:text-gray-400">Opportunity:</span>
               <Link
                 to="/opportunities/$opportunityId"
                 params={{ opportunityId: call.opportunityId }}
-                className="text-indigo-600 hover:text-indigo-800"
+                className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
               >
                 {call.opportunityName}
               </Link>

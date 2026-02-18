@@ -135,12 +135,12 @@ export default function SettingsPage() {
                 />
 
                 {saveSfConnection.isSuccess && (
-                  <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+                  <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
                     Salesforce connection saved successfully.
                   </div>
                 )}
                 {saveSfConnection.isError && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
                     Failed to save Salesforce connection. Please check your credentials.
                   </div>
                 )}
@@ -156,12 +156,12 @@ export default function SettingsPage() {
                 />
 
                 {saveGongConnection.isSuccess && (
-                  <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+                  <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
                     Gong connection saved successfully.
                   </div>
                 )}
                 {saveGongConnection.isError && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
                     Failed to save Gong connection. Please check your credentials.
                   </div>
                 )}
@@ -172,7 +172,7 @@ export default function SettingsPage() {
 
         {activeTab === 'field-mapping' && (
           <Card title="SE Assignment Field Mapping">
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
               Configure the Salesforce Opportunity field API name used to identify the assigned
               Sales Engineer. This field is used during sync to associate opportunities with SE
               users.
@@ -181,7 +181,7 @@ export default function SettingsPage() {
               <div className="flex-1">
                 <label
                   htmlFor="se-field-api-name"
-                  className="block text-sm font-medium text-gray-700 mb-1"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                 >
                   Field API Name
                 </label>
@@ -191,7 +191,7 @@ export default function SettingsPage() {
                   value={fieldApiName || currentFieldApiName}
                   onChange={(e) => setFieldApiName(e.target.value)}
                   placeholder="e.g. SE_Assigned__c"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                 />
               </div>
               <button
@@ -225,12 +225,12 @@ export default function SettingsPage() {
               />
             )}
             {updateUserRole.isSuccess && (
-              <div className="mt-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+              <div className="mt-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
                 User role updated successfully.
               </div>
             )}
             {updateUserRole.isError && (
-              <div className="mt-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+              <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
                 Failed to update user role.
               </div>
             )}
@@ -249,12 +249,12 @@ export default function SettingsPage() {
               />
             )}
             {triggerSync.isSuccess && (
-              <div className="mt-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+              <div className="mt-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
                 Sync triggered successfully.
               </div>
             )}
             {triggerSync.isError && (
-              <div className="mt-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+              <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
                 Failed to trigger sync.
               </div>
             )}

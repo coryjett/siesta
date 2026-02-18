@@ -48,7 +48,7 @@ export default function OAuthConnection({
   return (
     <Card title={title}>
       <div className="flex items-center gap-3 mb-4">
-        <span className="text-sm font-medium text-gray-600">Status:</span>
+        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Status:</span>
         {isConnected ? (
           <Badge variant="success">Connected</Badge>
         ) : isConfigured ? (
@@ -63,7 +63,7 @@ export default function OAuthConnection({
           <div key={field.name}>
             <label
               htmlFor={`${provider}-${field.name}`}
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
             >
               {field.label}
             </label>
@@ -73,7 +73,7 @@ export default function OAuthConnection({
               value={values[field.name]}
               onChange={(e) => handleChange(field.name, e.target.value)}
               placeholder={field.placeholder}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
               required
             />
           </div>

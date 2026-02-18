@@ -24,7 +24,7 @@ function ProviderRow({ provider }: { provider: ProviderSyncStatus }) {
         <span
           className={clsx('h-2 w-2 rounded-full', statusColor[provider.status])}
         />
-        <span className="capitalize text-gray-700">{provider.provider}</span>
+        <span className="capitalize text-gray-700 dark:text-gray-300">{provider.provider}</span>
       </div>
       <span className="text-gray-500 text-xs">
         {statusLabel[provider.status]}
@@ -54,7 +54,7 @@ export default function SyncIndicator() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+        className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         type="button"
       >
         <span
@@ -67,12 +67,12 @@ export default function SyncIndicator() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 rounded-lg border border-gray-200 bg-white p-3 shadow-lg z-50">
+        <div className="absolute right-0 top-full mt-2 w-64 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 shadow-lg z-50">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
             Sync Status
           </h4>
           {data?.providers && data.providers.length > 0 ? (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
               {data.providers.map((p) => (
                 <ProviderRow key={p.provider} provider={p} />
               ))}

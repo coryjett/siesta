@@ -63,7 +63,7 @@ export default function OpportunityDetailPage() {
           row.contact?.email ? (
             <a
               href={`mailto:${row.contact.email}`}
-              className="text-indigo-600 hover:text-indigo-700"
+              className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             >
               {row.contact.email}
             </a>
@@ -122,11 +122,11 @@ export default function OpportunityDetailPage() {
               />
             </div>
             {opp.description && (
-              <div className="mt-4 border-t border-gray-200 pt-4">
+              <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
                 <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
                   Description
                 </p>
-                <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
+                <p className="mt-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                   {opp.description}
                 </p>
               </div>
@@ -234,13 +234,13 @@ export default function OpportunityDetailPage() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">{opp.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{opp.name}</h1>
           <Badge variant={getStageBadgeVariant(opp.stageName)}>
             {opp.stageName}
           </Badge>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
-          <span className="font-medium text-gray-700">
+        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
             {formatCurrency(opp.amount)}
           </span>
           <span>Close Date: {formatDate(opp.closeDate)}</span>
@@ -270,7 +270,7 @@ function DetailField({
       <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
         {label}
       </p>
-      <p className="mt-1 text-sm text-gray-900">{value || '--'}</p>
+      <p className="mt-1 text-sm text-gray-900 dark:text-gray-100">{value || '--'}</p>
     </div>
   );
 }

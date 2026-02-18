@@ -73,7 +73,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">Notes</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notes</h3>
         {!showForm && !editingNote && (
           <button
             type="button"
@@ -86,7 +86,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
       </div>
 
       {showForm && (
-        <div className="bg-gray-50 rounded-lg p-4">
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
           <NoteForm
             accountId={accountId}
             opportunityId={opportunityId}
@@ -97,7 +97,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
       )}
 
       {editingNote && (
-        <div className="bg-gray-50 rounded-lg p-4">
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
           <NoteForm
             accountId={accountId}
             opportunityId={opportunityId}
@@ -127,11 +127,11 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
           {data?.data.map((note) => (
             <div
               key={note.id}
-              className="bg-white border border-gray-200 rounded-lg p-4"
+              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-900">
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                     {note.authorName}
                   </span>
                   <span className="text-xs text-gray-500">
@@ -146,7 +146,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
                     <button
                       type="button"
                       onClick={() => handleEdit(note)}
-                      className="px-2 py-1 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
+                      className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                     >
                       Edit
                     </button>
@@ -162,7 +162,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
                 )}
               </div>
               <div
-                className="prose prose-sm max-w-none text-gray-700"
+                className="prose prose-sm max-w-none text-gray-700 dark:text-gray-300"
                 dangerouslySetInnerHTML={{ __html: note.contentHtml }}
               />
             </div>
@@ -176,7 +176,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
             type="button"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Previous
           </button>
@@ -187,7 +187,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
             type="button"
             onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
             disabled={page >= data.totalPages}
-            className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Next
           </button>

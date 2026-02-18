@@ -34,7 +34,7 @@ export default function HomePage() {
           <Card title="Attention Items" dragHandleProps={dragHandleProps}>
             {attentionItems.overdue.length > 0 && (
               <div className="mb-4">
-                <h4 className="mb-2 text-sm font-semibold text-red-700">
+                <h4 className="mb-2 text-sm font-semibold text-red-700 dark:text-red-400">
                   Overdue Deals ({attentionItems.overdue.length})
                 </h4>
                 <div className="space-y-2">
@@ -43,19 +43,19 @@ export default function HomePage() {
                       key={opp.id}
                       to="/opportunities/$opportunityId"
                       params={{ opportunityId: opp.id }}
-                      className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-4 py-3 transition-colors hover:bg-red-100"
+                      className="flex items-center justify-between rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 transition-colors hover:bg-red-100 dark:hover:bg-red-900/30"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                           {opp.name}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {opp.accountName} -- Close:{' '}
                           {formatDate(opp.closeDate)}
                         </p>
                       </div>
                       <div className="ml-4 flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                           {formatCurrency(opp.amount)}
                         </span>
                         <Badge variant="danger">Overdue</Badge>
@@ -68,7 +68,7 @@ export default function HomePage() {
 
             {attentionItems.stale.length > 0 && (
               <div>
-                <h4 className="mb-2 text-sm font-semibold text-yellow-700">
+                <h4 className="mb-2 text-sm font-semibold text-yellow-700 dark:text-yellow-400">
                   Stale Deals ({attentionItems.stale.length})
                 </h4>
                 <div className="space-y-2">
@@ -77,13 +77,13 @@ export default function HomePage() {
                       key={opp.id}
                       to="/opportunities/$opportunityId"
                       params={{ opportunityId: opp.id }}
-                      className="flex items-center justify-between rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 transition-colors hover:bg-yellow-100"
+                      className="flex items-center justify-between rounded-md border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 px-4 py-3 transition-colors hover:bg-yellow-100 dark:hover:bg-yellow-900/30"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                           {opp.name}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {opp.accountName} --{' '}
                           {opp.lastActivityDate
                             ? `Last activity: ${formatDate(opp.lastActivityDate)}`
@@ -91,7 +91,7 @@ export default function HomePage() {
                         </p>
                       </div>
                       <div className="ml-4 flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                           {formatCurrency(opp.amount)}
                         </span>
                         <Badge variant="warning">Stale</Badge>
@@ -130,7 +130,7 @@ export default function HomePage() {
           dragHandleProps={dragHandleProps}
         >
           {upcomingActivities.length === 0 ? (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               No upcoming activities in the next 7 days.
             </p>
           ) : (
@@ -138,10 +138,10 @@ export default function HomePage() {
               {upcomingActivities.map((activity) => (
                 <div
                   key={activity.id}
-                  className="flex items-center justify-between rounded-md border border-gray-200 px-4 py-3"
+                  className="flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-4 py-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                       {activity.subject || 'Untitled Activity'}
                     </p>
                     {activity.description && (
@@ -169,7 +169,7 @@ export default function HomePage() {
       render: (dragHandleProps) => (
         <Card title="Recent Gong Calls" dragHandleProps={dragHandleProps}>
           {recentCalls.length === 0 ? (
-            <p className="text-sm text-gray-500">No recent Gong calls.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No recent Gong calls.</p>
           ) : (
             <div className="space-y-3">
               {recentCalls.map((call) => (

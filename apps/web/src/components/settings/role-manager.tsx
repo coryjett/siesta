@@ -38,7 +38,7 @@ export default function RoleManager({ users, onUpdateRole, isUpdating }: RoleMan
   return (
     <Card title="User Management">
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead>
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -58,14 +58,14 @@ export default function RoleManager({ users, onUpdateRole, isUpdating }: RoleMan
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {users.map((user) => {
               const isEditing = editingUserId === user.id;
 
               return (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-900">{user.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{user.email}</td>
+                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{user.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{user.email}</td>
                   <td className="px-4 py-3 text-sm">
                     {isEditing ? (
                       <select
@@ -73,7 +73,7 @@ export default function RoleManager({ users, onUpdateRole, isUpdating }: RoleMan
                         onChange={(e) =>
                           setEditState((prev) => ({ ...prev, role: e.target.value as UserRole }))
                         }
-                        className="px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                       >
                         {ROLE_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
@@ -82,7 +82,7 @@ export default function RoleManager({ users, onUpdateRole, isUpdating }: RoleMan
                         ))}
                       </select>
                     ) : (
-                      <span className="text-gray-900">
+                      <span className="text-gray-900 dark:text-gray-100">
                         {ROLE_OPTIONS.find((o) => o.value === user.role)?.label ?? user.role}
                       </span>
                     )}
@@ -96,10 +96,10 @@ export default function RoleManager({ users, onUpdateRole, isUpdating }: RoleMan
                           setEditState((prev) => ({ ...prev, sfUserId: e.target.value }))
                         }
                         placeholder="e.g. 0051g00000ABC"
-                        className="px-2 py-1 border border-gray-300 rounded text-sm w-44 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded text-sm w-44 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                       />
                     ) : (
-                      <span className="text-gray-600 font-mono text-xs">
+                      <span className="text-gray-600 dark:text-gray-400 font-mono text-xs">
                         {user.sfUserId || '--'}
                       </span>
                     )}
@@ -116,7 +116,7 @@ export default function RoleManager({ users, onUpdateRole, isUpdating }: RoleMan
                         </button>
                         <button
                           onClick={handleCancel}
-                          className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-xs font-medium hover:bg-gray-300"
+                          className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium hover:bg-gray-300 dark:hover:bg-gray-600"
                         >
                           Cancel
                         </button>
@@ -124,7 +124,7 @@ export default function RoleManager({ users, onUpdateRole, isUpdating }: RoleMan
                     ) : (
                       <button
                         onClick={() => handleEdit(user)}
-                        className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium hover:bg-gray-200"
+                        className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-600"
                       >
                         Edit
                       </button>

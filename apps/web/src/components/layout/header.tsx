@@ -74,7 +74,7 @@ export default function Header({ title }: HeaderProps) {
                 className="h-7 w-7 rounded-full object-cover"
               />
             ) : (
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-xs font-medium text-gray-600">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300">
                 {user?.name
                   .split(' ')
                   .map((n) => n[0])

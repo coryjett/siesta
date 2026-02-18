@@ -62,7 +62,7 @@ export default function SyncStatusTable({ statuses, onTriggerSync, isSyncing }: 
       </div>
 
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead>
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -85,22 +85,22 @@ export default function SyncStatusTable({ statuses, onTriggerSync, isSyncing }: 
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {statuses.map((status) => (
-              <tr key={`${status.provider}-${status.entity}`} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+              <tr key={`${status.provider}-${status.entity}`} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 font-medium">
                   {capitalizeFirst(status.provider)}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                   {capitalizeFirst(status.entity)}
                 </td>
                 <td className="px-4 py-3 text-sm">
                   {getStatusBadge(status.status)}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                   {formatDateTime(status.lastSyncAt)}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                   {status.recordsProcessed ?? '--'}
                 </td>
                 <td className="px-4 py-3 text-sm text-red-600 max-w-xs truncate">

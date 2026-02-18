@@ -13,7 +13,7 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, href }: MetricCardProps) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
         {label}
       </p>
@@ -22,12 +22,12 @@ function MetricCard({ label, value, href }: MetricCardProps) {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-1 block text-lg font-semibold text-indigo-600 hover:text-indigo-700 truncate"
+          className="mt-1 block text-lg font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 truncate"
         >
           {value || '--'}
         </a>
       ) : (
-        <p className="mt-1 text-lg font-semibold text-gray-900">
+        <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
           {value || '--'}
         </p>
       )}
