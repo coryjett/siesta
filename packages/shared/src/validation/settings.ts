@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
 export const sfConnectionSchema = z.object({
-  sessionId: z.string().min(1),
-  instanceUrl: z.string().url(),
+  username: z.string().min(1),
+  password: z.string().min(1),
+  securityToken: z.string().min(1),
+  loginUrl: z.string().url(),
 });
 
 export const gongConnectionSchema = z.object({

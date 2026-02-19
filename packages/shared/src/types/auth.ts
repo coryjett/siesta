@@ -21,6 +21,7 @@ export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  authMode: 'google' | 'dev-bypass' | null;
 }
 
 export interface DevBypassLoginRequest {

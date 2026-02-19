@@ -13,7 +13,6 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(1).default('dev-secret-change-in-production'),
   AUTH_MODE: z.enum(['google', 'dev-bypass']).default('dev-bypass'),
   GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REDIRECT_URI: z.string().optional(),
   ENCRYPTION_KEY: z.string().length(64).default('0000000000000000000000000000000000000000000000000000000000000000'),
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),

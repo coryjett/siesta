@@ -62,3 +62,18 @@ export async function devBypassLogin(params: DevLoginParams): Promise<{ token: s
 
   return { token, user };
 }
+
+/**
+ * Dev bypass role change: updates the role of an existing user in-place.
+ * Only works when AUTH_MODE=dev-bypass.
+ */
+export async function devSetRole(userId: string, role: UserRole): Promise<void> {
+  if (env.AUTH_MODE !== 'dev-bypass') {
+    throw new ForbiddenError('Dev role switching is not enabled');
+  }
+
+  await db
+    .update(users)
+    .set({ role, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
