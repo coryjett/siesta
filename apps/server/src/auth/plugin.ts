@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { env } from '../config/env.js';
-import { devBypassLogin } from './dev-bypass.js';
+import { devBypassLogin, devSetRole } from './dev-bypass.js';
 import { buildAuthUrl, handleCallback } from './google.js';
 import { deleteSession } from './session.js';
 import { requireAuth } from './guards.js';
@@ -133,7 +133,7 @@ export async function authPlugin(app: FastifyInstance) {
 
   /**
    * GET /auth/me
-   * Returns the currently authenticated user.
+   * Returns the currently authenticated user and the active auth mode.
    */
   app.get('/auth/me', {
     preHandler: [requireAuth],
@@ -148,7 +148,23 @@ export async function authPlugin(app: FastifyInstance) {
         role: user.role,
         avatarUrl: user.avatarUrl,
       },
+      authMode: env.AUTH_MODE,
     });
+  });
+
+  /**
+   * POST /auth/dev-set-role
+   * Change the current user's role in-place. Only works in dev-bypass mode.
+   */
+  app.post('/auth/dev-set-role', {
+    preHandler: [requireAuth],
+  }, async (request, reply) => {
+    const { role } = request.body as { role: string };
+    if (!['se', 'se_manager', 'admin'].includes(role)) {
+      throw new BadRequestError('Invalid role');
+    }
+    await devSetRole(request.user.id, role as 'se' | 'se_manager' | 'admin');
+    return reply.send({ success: true });
   });
 
   /**

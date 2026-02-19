@@ -25,8 +25,10 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 const SF_FIELDS: FieldConfig[] = [
-  { name: 'sessionId', label: 'Session ID', type: 'password', placeholder: 'Paste your Salesforce session cookie (sid)' },
-  { name: 'instanceUrl', label: 'Instance URL', type: 'url', placeholder: 'https://yourorg.my.salesforce.com' },
+  { name: 'username', label: 'Username', type: 'text', placeholder: 'user@example.com' },
+  { name: 'password', label: 'Password', type: 'password', placeholder: 'Your Salesforce password' },
+  { name: 'securityToken', label: 'Security Token', type: 'password', placeholder: 'Your Salesforce security token' },
+  { name: 'loginUrl', label: 'Login URL', type: 'url', placeholder: 'https://login.salesforce.com' },
 ];
 
 const GONG_FIELDS: FieldConfig[] = [
@@ -58,8 +60,10 @@ export default function SettingsPage() {
 
   const handleSfSubmit = (values: Record<string, string>) => {
     saveSfConnection.mutate({
-      sessionId: values.sessionId,
-      instanceUrl: values.instanceUrl,
+      username: values.username,
+      password: values.password,
+      securityToken: values.securityToken,
+      loginUrl: values.loginUrl,
     });
   };
 

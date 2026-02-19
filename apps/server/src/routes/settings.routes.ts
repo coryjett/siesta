@@ -4,6 +4,8 @@ import { getAllSettings, setSetting, getSetting } from '../services/settings.ser
 import { saveTokens, hasTokens } from '../services/oauth-token.service.js';
 import { encrypt } from '../services/encryption.service.js';
 import { BadRequestError } from '../utils/errors.js';
+import { logger } from '../utils/logger.js';
+import { soapLogin } from '../integrations/salesforce/oauth.js';
 import {
   sfConnectionSchema,
   gongConnectionSchema,
@@ -45,24 +47,29 @@ export async function settingsRoutes(app: FastifyInstance) {
 
   /**
    * POST /api/settings/sf-connection
-   * Save Salesforce session credentials.
-   * Stores the session ID as an encrypted access token in oauth_tokens.
+   * Authenticate with Salesforce using username + password + security token (SOAP login).
+   * Stores the resulting access token and instance URL in oauth_tokens.
    */
   app.post('/api/settings/sf-connection', async (request, reply) => {
+    logger.info({ body: request.body }, 'POST /api/settings/sf-connection received');
     const parsed = sfConnectionSchema.safeParse(request.body);
     if (!parsed.success) {
+      logger.error({ errors: parsed.error.errors }, 'Invalid Salesforce connection settings');
       throw new BadRequestError(parsed.error.errors.map((e) => e.message).join(', '));
     }
 
-    const { sessionId, instanceUrl } = parsed.data;
+    const { username, password, securityToken, loginUrl } = parsed.data;
 
-    // Store the session ID as an access token in oauth_tokens
-    await saveTokens('salesforce', {
-      accessToken: sessionId,
-      instanceUrl,
-    });
+    let accessToken: string;
+    let instanceUrl: string;
+    try {
+      logger.error('Attempting Salesforce SOAP login for user %s', username);
+      ({ accessToken, instanceUrl } = await soapLogin(username, password, securityToken, loginUrl));
+    } catch (err) {
+      throw new BadRequestError(err instanceof Error ? err.message : 'Salesforce login failed');
+    }
 
-    // Also store the instance URL in app_settings for reference
+    await saveTokens('salesforce', { accessToken, instanceUrl });
     await setSetting('sf_instance_url', instanceUrl);
 
     return reply.send({ success: true });

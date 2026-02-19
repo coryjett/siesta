@@ -19,14 +19,13 @@ async function getOIDCConfig(): Promise<client.Configuration> {
     return oidcConfig;
   }
 
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-    throw new Error('Google OIDC environment variables are not configured');
+  if (!env.GOOGLE_CLIENT_ID) {
+    throw new Error('GOOGLE_CLIENT_ID is not configured');
   }
 
   oidcConfig = await client.discovery(
     new URL('https://accounts.google.com'),
     env.GOOGLE_CLIENT_ID,
-    env.GOOGLE_CLIENT_SECRET,
   );
 
   return oidcConfig;

@@ -9,7 +9,7 @@ interface HeaderProps {
 }
 
 export default function Header({ title }: HeaderProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, authMode, setRole } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -126,6 +126,27 @@ export default function Header({ title }: HeaderProps) {
                 </svg>
                 Settings
               </Link>
+              {authMode === 'dev-bypass' && (
+                <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-2">
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mb-1.5">Dev: switch role</p>
+                  <div className="flex gap-1">
+                    {(['se', 'se_manager', 'admin'] as const).map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => { setRole(r); setMenuOpen(false); }}
+                        className={`flex-1 rounded px-1.5 py-1 text-xs font-medium transition-colors ${
+                          user?.role === r
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {r === 'se' ? 'SE' : r === 'se_manager' ? 'Mgr' : 'Admin'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button
                 onClick={handleLogout}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
