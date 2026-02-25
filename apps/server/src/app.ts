@@ -11,14 +11,14 @@ import { AppError } from './utils/errors.js';
 import { authPlugin } from './auth/plugin.js';
 import { settingsRoutes } from './routes/settings.routes.js';
 import { usersRoutes } from './routes/users.routes.js';
-import { syncRoutes } from './routes/sync.routes.js';
 import { searchRoutes } from './routes/search.routes.js';
 import { accountsRoutes } from './routes/accounts.routes.js';
 import { opportunitiesRoutes } from './routes/opportunities.routes.js';
 import { homeRoutes } from './routes/home.routes.js';
-import { gongRoutes } from './routes/gong.routes.js';
 import { notesRoutes } from './routes/notes.routes.js';
-import { calendarRoutes } from './routes/calendar.routes.js';
+import { interactionsRoutes } from './routes/interactions.routes.js';
+import { portfolioRoutes } from './routes/portfolio.routes.js';
+import { supportMcpAuthRoutes } from './routes/support-mcp-auth.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -49,7 +49,7 @@ export async function buildApp() {
     if (env.NODE_ENV === 'production') {
       reply.header(
         'Content-Security-Policy',
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.cdnfonts.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com https://fonts.cdnfonts.com",
       );
     }
   });
@@ -96,17 +96,17 @@ export async function buildApp() {
   // Auth routes
   await app.register(authPlugin);
 
-  // Settings, users, and sync routes
+  // API routes
   await app.register(settingsRoutes);
   await app.register(usersRoutes);
-  await app.register(syncRoutes);
   await app.register(searchRoutes);
   await app.register(accountsRoutes);
   await app.register(opportunitiesRoutes);
   await app.register(homeRoutes);
-  await app.register(gongRoutes);
   await app.register(notesRoutes);
-  await app.register(calendarRoutes);
+  await app.register(interactionsRoutes);
+  await app.register(portfolioRoutes);
+  await app.register(supportMcpAuthRoutes);
 
   // Serve static frontend in production
   if (env.NODE_ENV === 'production') {

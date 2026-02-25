@@ -1,15 +1,17 @@
 # Siesta
 
-Sales Engineering pipeline management platform integrating Salesforce CRM and Gong for unified visibility into opportunities, calls, and activities.
+Sales Engineering portfolio management platform powered by MCP (Model Context Protocol) for unified visibility into accounts, interactions, sentiment, and portfolio health.
 
 ## Tech Stack
 
 - **Monorepo:** Turborepo with npm workspaces
 - **Frontend (`apps/web`):** React 19, Vite 6, TanStack Router (file-based), TanStack Query, Tailwind CSS 4, TipTap editor
 - **Backend (`apps/server`):** Fastify 5, Node.js 20+, TypeScript 5.7
-- **Database:** PostgreSQL 16 with Drizzle ORM (extensions: pg_trgm, pgcrypto)
-- **Queue/Cache:** BullMQ + Redis 7 via ioredis
-- **Auth:** Google OAuth (openid-client) with dev-bypass mode
+- **Database:** PostgreSQL 16 with Drizzle ORM (for notes, users, sessions, settings)
+- **Caching:** Redis (ioredis) with per-endpoint TTLs for MCP responses
+- **Data Source:** MCP server (portfolio-analyzer) via Agent Gateway at `http://agentgateway.siesta.svc.cluster.local:3000/mcp` -- aggregates Salesforce, Gong, Zendesk, GitHub, Gmail, Calendar
+- **AI:** OpenAI (gpt-4o-mini) via Agent Gateway for account overviews, email thread summaries, and action item extraction, with Redis caching
+- **Auth:** Keycloak OIDC (openid-client) for app login; Google OAuth for Gmail/Calendar integration
 - **Shared (`packages/shared`):** Types, Zod validation schemas, role constants
 
 ## Commands
@@ -36,33 +38,81 @@ npm run db:studio              # Open Drizzle Studio GUI
 ```
 apps/
   server/src/
-    routes/          # Fastify route handlers
-    services/        # Business logic layer
-    integrations/    # Salesforce and Gong API clients, sync, mappers
-    jobs/            # BullMQ workers, schedulers (SF 15min, Gong 30min)
-    db/schema/       # Drizzle table definitions and migrations
-    auth/            # Auth plugin, guards, Google OAuth, sessions
+    routes/          # Fastify route handlers (accounts, home, interactions, search, settings)
+    services/        # Business logic
+      mcp-*.service.ts   # MCP tool proxies with Redis caching
+      cache.service.ts   # Redis caching utility (cachedCall, invalidateCache)
+      openai-summary.service.ts  # OpenAI summarization (account overviews, email thread summaries, action items) with Redis caching
+      google-token.service.ts  # Shared Google OAuth token management
+      encryption.service.ts    # AES-256-GCM token encryption
+    integrations/
+      mcp/           # MCP client (auth.ts, client.ts, types.ts) -- routes through Agent Gateway
+    db/schema/       # Drizzle tables: users, sessions, notes, app_settings, user_google_tokens
+    auth/            # Auth plugin, guards, Keycloak OIDC, sessions
     config/          # Zod-validated environment config
   web/src/
     pages/           # Route components (lazy loaded via TanStack Router)
     components/      # UI components (layout/, common/, feature-specific/)
-    api/             # API client functions
+    api/             # API client functions (queries/, mutations/)
     hooks/           # Custom React hooks
     contexts/        # AuthContext, ThemeContext
 packages/
-  shared/src/        # Shared types, Zod schemas, role constants
+  shared/src/        # Shared types (mcp.ts, notes.ts, auth.ts, api.ts), Zod schemas, role constants
 k8s/                 # Kubernetes deployment manifests
 scripts/             # Database initialization scripts
 ```
 
 ## Architecture Notes
 
-- **Backend pattern:** Routes -> Services -> Drizzle ORM. Fastify plugin architecture for modularity.
-- **Frontend pattern:** File-based routing with lazy loading. TanStack Query for server state (2min stale time). Vite dev proxy forwards `/api` and `/auth` to backend.
-- **User roles:** `se` (own opportunities), `se_manager` (all opportunities), `admin` (full access + settings). Level-based hierarchy in `packages/shared/src/constants/roles.ts`.
-- **Token encryption:** Salesforce/Gong/Google OAuth tokens encrypted in DB via pgcrypto and a 32-byte ENCRYPTION_KEY.
-- **Background jobs:** BullMQ workers for async Salesforce/Gong sync. Cron-scheduled via node-cron.
+- **MCP Integration:** Backend proxies MCP tool calls through the enterprise Agent Gateway (`agentgateway.siesta.svc.cluster.local:3000`). The gateway handles routing, rate limiting, and observability. Auth uses Keycloak client_credentials for the backend token, which is passed through the gateway to the upstream MCP server. API key authentication secures Siesta-to-gateway communication.
+- **Redis Caching:** All MCP service calls are wrapped with `cachedCall()` from `cache.service.ts`. TTLs: 5 min (details, interactions, issues, tasks, home), 10 min (lists, contacts, opportunities), 15 min (architecture, sentiment, portfolio stats). Search is not cached. Redis failure degrades gracefully to direct MCP calls.
+- **OpenAI Integration:** `openai-summary.service.ts` provides AI features: (1) `summarizeAccount()` -- gathers account details, opportunities, interactions, issues, and tasks, then generates a structured overview via gpt-4o-mini (cached 1 hour); (2) `summarizeEmailThread()` -- summarizes grouped email threads with key points, decisions, and action items (cached 24 hours); (3) `extractActionItems()` -- extracts action items from recent interactions (cached 1 hour). OpenAI requests route through the Agent Gateway in production (`OPENAI_BASE_URL`). Graceful fallback: returns `null` if API key is missing or OpenAI is unreachable.
+- **Google Integration:** Users connect Google accounts via OAuth from Settings. Tokens stored encrypted in `user_google_tokens` table. Shared token management in `google-token.service.ts` handles refresh. Used by Calendar and Gmail routes.
+- **Backend pattern:** Routes -> MCP Services (with caching) -> MCP Client -> Agent Gateway -> MCP Server. Fastify plugin architecture for modularity. Notes/users stored locally in PostgreSQL.
+- **Frontend pattern:** File-based routing with lazy loading. TanStack Query for server state. Vite dev proxy forwards `/api` and `/auth` to backend.
+- **User roles:** `se`, `se_manager`, `admin`. Level-based hierarchy in `packages/shared/src/constants/roles.ts`. Homepage filters accounts by CSE owner or interaction participation.
+- **Homepage:** Shows accounts where the logged-in user is CSE owner or has participated in calls/emails/meetings. Only accounts with open non-renewal opportunities are shown. Stats include account count, total open pipeline, and open action items. Action items include issues and verbal commitments from Gong calls (no tasks, no Zendesk items).
+- **Account Detail:** AI-generated account summary (structured sections with bullet points), action items extracted from interactions, opportunities list (open opps with stage/amount/close date), grouped email threads with inline AI summaries, expandable call items with Gong summaries, meetings timeline, and notes.
+- **Email Thread Grouping:** On the account detail page, emails are grouped by thread (normalized subject line -- stripping Re:/Fwd: prefixes). Each thread shows a one-line AI-generated preview when collapsed and the full summary with all bullet points when expanded. No separate thread detail page.
+- **Call Expansion:** Calls on the account detail page and in search results are expandable inline. When expanded, the Gong call summary is fetched via MCP. If MCP can't find the detail, falls back to the call preview from the list endpoint.
+- **Search:** Semantic search across all interactions. Call results are expandable inline to show Gong summaries. Email, meeting, and ticket results show snippets inline (not clickable, as MCP detail endpoints don't support fetching them).
+- **Key pages:** Home (personal dashboard with accounts + action items), Accounts (list + detail with AI overview, action items, opportunities, grouped emails, calls, meetings, notes), Search (semantic search with inline call expansion), Settings (user management, integrations, AI status, cache, preferences).
+- **Token encryption:** Google OAuth tokens encrypted in `user_google_tokens` table via AES-256-GCM and a 32-byte ENCRYPTION_KEY.
+- **Sensitive config:** MCP credentials (client ID, secret, server URL, auth URLs) have no hardcoded defaults -- they must be provided via environment variables or `.env` file. The `.env` file is in `.gitignore`.
 - **Production:** Single Docker container serves static frontend + API on port 3000. Kubernetes manifests in `k8s/`.
+
+## Environment Variables
+
+All sensitive values must be provided via `.env` (gitignored) or environment variables. No secrets have hardcoded defaults.
+
+```
+# MCP (required -- via Agent Gateway)
+MCP_SERVER_URL=<mcp-server-url>
+MCP_CLIENT_ID=<keycloak-client-id>
+MCP_CLIENT_SECRET=<keycloak-client-secret>
+MCP_AUTH_URL=<keycloak-auth-endpoint>
+MCP_TOKEN_URL=<keycloak-token-endpoint>
+MCP_GATEWAY_API_KEY=<agent-gateway-api-key>
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# OpenAI (optional -- enables AI overviews, email summaries, action item extraction)
+OPENAI_API_KEY=<openai-api-key>
+OPENAI_BASE_URL=https://api.openai.com/v1  # or Agent Gateway URL in production
+
+# Google OAuth (optional -- enables Calendar/Gmail integration)
+GOOGLE_CLIENT_ID=<google-client-id>
+GOOGLE_CLIENT_SECRET=<google-client-secret>
+GOOGLE_REDIRECT_URI=https://siesta.cjett.net/auth/google/callback
+
+# App
+APP_URL=https://siesta.cjett.net
+API_URL=https://siesta.cjett.net
+SESSION_SECRET=<32-byte-secret>
+ENCRYPTION_KEY=<32-byte-hex-key>
+DATABASE_URL=postgresql://...
+```
 
 ## Deployment
 
@@ -75,3 +125,18 @@ docker push us-central1-docker.pkg.dev/field-engineering-us/siesta/siesta:latest
 kubectl rollout restart deployment/siesta -n siesta
 kubectl rollout status deployment/siesta -n siesta
 ```
+
+## Agent Gateway Setup
+
+MCP traffic from Siesta routes through the enterprise Agent Gateway in the cluster:
+
+```
+Siesta pod -> agentgateway.siesta.svc:3000 -> mcp.cs.solo.io:443
+```
+
+Resources in `siesta` namespace:
+- `Gateway/agentgateway` -- listener on port 3000
+- `AgentgatewayBackend/portfolio-analyzer` -- static target to `mcp.cs.solo.io:443` with TLS + passthrough auth
+- `AgentgatewayBackend/openai` -- static target to `api.openai.com:443` for OpenAI API proxying
+- `HTTPRoute/openai-proxy` -- routes `/v1/*` through the gateway to OpenAI
+- `AgentgatewayPolicy/siesta-auth` -- API key authentication via `Secret/siesta-agw-apikey`

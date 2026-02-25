@@ -1,16 +1,16 @@
-import { Link } from '@tanstack/react-router';
 import clsx from 'clsx';
-import type { SfOpportunity } from '@siesta/shared';
+import type { Opportunity } from '@siesta/shared';
 import { formatCurrency } from '../../lib/currency';
 import { formatDate } from '../../lib/date';
 import Badge from '../common/badge';
 
 interface OpportunityCardProps {
-  opportunity: SfOpportunity;
+  opportunity: Opportunity;
   className?: string;
 }
 
-function getCloseDateStatus(closeDate: string): 'overdue' | 'soon' | 'normal' {
+function getCloseDateStatus(closeDate: string | null): 'overdue' | 'soon' | 'normal' {
+  if (!closeDate) return 'normal';
   const now = new Date();
   const close = new Date(closeDate);
   const diffMs = close.getTime() - now.getTime();
@@ -25,8 +25,8 @@ function getStageBadgeVariant(
   stageName: string,
 ): 'default' | 'success' | 'warning' | 'danger' | 'info' {
   const lower = stageName.toLowerCase();
-  if (lower.includes('closed won')) return 'success';
-  if (lower.includes('closed lost')) return 'danger';
+  if (lower.includes('closed won') || lower.includes('won')) return 'success';
+  if (lower.includes('closed lost') || lower.includes('lost')) return 'danger';
   if (lower.includes('negotiation') || lower.includes('proposal')) return 'warning';
   if (lower.includes('qualification') || lower.includes('discovery')) return 'info';
   return 'default';
@@ -41,11 +41,9 @@ export default function OpportunityCard({
     : getCloseDateStatus(opportunity.closeDate);
 
   return (
-    <Link
-      to="/opportunities/$opportunityId"
-      params={{ opportunityId: opportunity.id }}
+    <div
       className={clsx(
-        'block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm transition-shadow hover:shadow-md',
+        'block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm',
         className,
       )}
     >
@@ -53,16 +51,10 @@ export default function OpportunityCard({
         <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
           {opportunity.name}
         </h4>
-        <Badge variant={getStageBadgeVariant(opportunity.stageName)}>
-          {opportunity.stageName}
+        <Badge variant={getStageBadgeVariant(opportunity.stage)}>
+          {opportunity.stage}
         </Badge>
       </div>
-
-      {opportunity.accountName && (
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 truncate">
-          {opportunity.accountName}
-        </p>
-      )}
 
       <div className="mt-3 flex items-center justify-between text-xs">
         <span className="font-medium text-gray-700 dark:text-gray-300">
@@ -80,11 +72,11 @@ export default function OpportunityCard({
         </span>
       </div>
 
-      {opportunity.assignedSeName && (
+      {opportunity.owner && (
         <p className="mt-2 text-xs text-gray-400 dark:text-gray-500 truncate">
-          SE: {opportunity.assignedSeName}
+          Owner: {opportunity.owner}
         </p>
       )}
-    </Link>
+    </div>
   );
 }

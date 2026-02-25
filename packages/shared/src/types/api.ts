@@ -17,15 +17,6 @@ export interface ApiError {
   message: string;
 }
 
-export interface SyncStatus {
-  provider: 'salesforce' | 'gong';
-  entity: string;
-  status: 'idle' | 'running' | 'completed' | 'failed';
-  lastSyncAt: string | null;
-  lastError: string | null;
-  recordsProcessed: number | null;
-}
-
 export interface AppSetting {
   key: string;
   value: string;

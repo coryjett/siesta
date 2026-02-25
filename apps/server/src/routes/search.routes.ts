@@ -1,36 +1,38 @@
 import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../auth/guards.js';
-import { search } from '../services/search.service.js';
+import { searchPortfolio } from '../services/mcp-search.service.js';
 
 export async function searchRoutes(app: FastifyInstance) {
-  // All routes require authentication
   app.addHook('preHandler', requireAuth);
 
   /**
    * GET /api/search
-   * Search transcripts with full-text search.
+   * Semantic search across portfolio interactions.
    */
-  app.get('/api/search', async (request, reply) => {
-    const { q, accountId, opportunityId, fromDate, toDate, page, pageSize } = request.query as Record<string, string>;
+  app.get<{
+    Querystring: {
+      q: string;
+      sourceTypes?: string;
+      fromDate?: string;
+      toDate?: string;
+    };
+  }>('/api/search', async (request, reply) => {
+    const { q, sourceTypes, fromDate, toDate } = request.query;
 
     if (!q || q.trim().length < 2) {
       return reply.status(400).send({
         statusCode: 400,
         error: 'BadRequest',
-        message: 'Search query must be at least 2 characters'
+        message: 'Search query must be at least 2 characters',
       });
     }
 
-    const results = await search({
-      query: q,
-      accountId,
-      opportunityId,
-      fromDate,
-      toDate,
-      page: page ? parseInt(page) : undefined,
-      pageSize: pageSize ? parseInt(pageSize) : undefined,
+    const results = await searchPortfolio(q, {
+      sourceTypes: sourceTypes ? sourceTypes.split(',') : undefined,
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
     });
 
-    return results;
+    return reply.send(results);
   });
 }

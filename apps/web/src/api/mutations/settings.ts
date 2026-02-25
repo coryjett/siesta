@@ -1,53 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
-import type { SfConnectionInput, GongConnectionInput, SeFieldMappingInput } from '@siesta/shared';
-
-/**
- * Mutation to save Salesforce OAuth credentials.
- */
-export function useSaveSfConnection() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: SfConnectionInput) =>
-      api.post('/settings/sf-connection', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      queryClient.invalidateQueries({ queryKey: ['settings', 'connections'] });
-    },
-  });
-}
-
-/**
- * Mutation to save Gong OAuth credentials.
- */
-export function useSaveGongConnection() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: GongConnectionInput) =>
-      api.post('/settings/gong-connection', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      queryClient.invalidateQueries({ queryKey: ['settings', 'connections'] });
-    },
-  });
-}
-
-/**
- * Mutation to update the SE field mapping.
- */
-export function useUpdateSeFieldMapping() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: SeFieldMappingInput) =>
-      api.put('/settings/se-field-mapping', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-    },
-  });
-}
 
 /**
  * Mutation to update a user's role.
@@ -65,16 +17,43 @@ export function useUpdateUserRole() {
 }
 
 /**
- * Mutation to trigger a manual sync for a provider.
+ * Mutation to force reconnect to MCP server.
  */
-export function useTriggerSync() {
+export function useReconnectMcp() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (provider: string) =>
-      api.post(`/sync/trigger/${provider}`),
+    mutationFn: () => api.post<{ connected: boolean; error: string | null }>('/settings/mcp-reconnect'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sync', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'connections'] });
+    },
+  });
+}
+
+/**
+ * Mutation to flush the Redis cache.
+ */
+export function useFlushCache() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => api.post<{ success: boolean }>('/settings/cache/flush'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'cache'] });
+    },
+  });
+}
+
+/**
+ * Mutation to disconnect from support MCP server.
+ */
+export function useDisconnectSupportMcp() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => api.post<{ success: boolean }>('/settings/support-mcp-disconnect'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'support-mcp-status'] });
     },
   });
 }

@@ -7,9 +7,9 @@ import { Spinner } from '../common/loading';
 
 const routeTitles: Record<string, string> = {
   '/': 'Home',
-  '/opportunities/kanban': 'Opportunities',
+  '/portfolio': 'Portfolio',
   '/accounts': 'Accounts',
-  '/gong/search': 'Gong Search',
+  '/search': 'Search',
   '/settings': 'Settings',
 };
 
@@ -26,7 +26,7 @@ export default function AppShell() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <div className="flex h-screen items-center justify-center bg-[#f9f9fb] dark:bg-[#0d0c12]">
         <Spinner size="lg" />
       </div>
     );
@@ -41,7 +41,7 @@ export default function AppShell() {
   const pageTitle = routeTitles[currentPath] ?? 'Siesta';
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen bg-[#f9f9fb] dark:bg-[#0d0c12]">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header title={pageTitle} />

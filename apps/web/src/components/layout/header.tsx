@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useAuth } from '../../contexts/auth-context';
 import { useTheme } from '../../contexts/theme-context';
-import SyncIndicator from './sync-indicator';
 
 interface HeaderProps {
   title: string;
@@ -30,16 +29,14 @@ export default function Header({ title }: HeaderProps) {
   };
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6">
-      <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
+    <header className="flex h-16 items-center justify-between border-b border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] px-6">
+      <h1 className="font-display text-lg font-semibold text-[#191726] dark:text-[#f2f2f2]">{title}</h1>
 
       <div className="flex items-center gap-3">
-        <SyncIndicator />
-
         {/* Theme toggle */}
         <button
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-          className="relative inline-flex h-7 w-13 items-center rounded-full bg-gray-200 dark:bg-gray-600 transition-colors"
+          className="relative inline-flex h-7 w-13 items-center rounded-full bg-[#e9e8ed] dark:bg-[#25232f] transition-colors"
           aria-label="Toggle dark mode"
           type="button"
         >
@@ -49,7 +46,7 @@ export default function Header({ title }: HeaderProps) {
             }`}
           >
             {resolvedTheme === 'dark' ? (
-              <svg className="h-3 w-3 text-gray-700" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="h-3 w-3 text-[#858198]" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
               </svg>
             ) : (
@@ -64,7 +61,7 @@ export default function Header({ title }: HeaderProps) {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen((prev) => !prev)}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm text-[#191726] dark:text-[#f2f2f2] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f] transition-colors"
             type="button"
           >
             {user?.avatarUrl ? (
@@ -74,7 +71,7 @@ export default function Header({ title }: HeaderProps) {
                 className="h-7 w-7 rounded-full object-cover"
               />
             ) : (
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#6b26d9]/10 text-xs font-medium text-[#6b26d9] dark:bg-[#8249df]/20 dark:text-[#8249df]">
                 {user?.name
                   .split(' ')
                   .map((n) => n[0])
@@ -85,7 +82,7 @@ export default function Header({ title }: HeaderProps) {
             )}
             <span className="hidden sm:inline">{user?.name ?? 'User'}</span>
             <svg
-              className="h-4 w-4 text-gray-400"
+              className="h-4 w-4 text-[#6b677e]"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -96,18 +93,18 @@ export default function Header({ title }: HeaderProps) {
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg z-50">
-              <div className="border-b border-gray-100 dark:border-gray-700 px-4 py-2">
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{user?.name}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{user?.email}</p>
+            <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] py-1 shadow-lg z-50">
+              <div className="border-b border-[#dedde4] dark:border-[#2a2734] px-4 py-2">
+                <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">{user?.name}</p>
+                <p className="text-xs text-[#6b677e] dark:text-[#858198]">{user?.email}</p>
               </div>
               <Link
                 to="/settings"
                 onClick={() => setMenuOpen(false)}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#191726] dark:text-[#f2f2f2] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f] transition-colors"
               >
                 <svg
-                  className="h-4 w-4 text-gray-400"
+                  className="h-4 w-4 text-[#6b677e]"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -128,11 +125,11 @@ export default function Header({ title }: HeaderProps) {
               </Link>
               <button
                 onClick={handleLogout}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#191726] dark:text-[#f2f2f2] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f] transition-colors"
                 type="button"
               >
                 <svg
-                  className="h-4 w-4 text-gray-400"
+                  className="h-4 w-4 text-[#6b677e]"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"

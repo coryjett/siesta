@@ -20,7 +20,7 @@ export function useFilters<T extends Record<string, unknown>>(
   const setFilters = useCallback(
     (updates: Partial<T>) => {
       navigate({
-        search: (prev: Record<string, unknown>) => {
+        search: ((prev: Record<string, unknown>) => {
           const next = { ...prev, ...updates };
           // Remove keys that match defaults to keep URL clean
           for (const [key, value] of Object.entries(next)) {
@@ -32,7 +32,7 @@ export function useFilters<T extends Record<string, unknown>>(
             }
           }
           return next;
-        },
+        }) as never,
       });
     },
     [navigate, defaults],

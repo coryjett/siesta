@@ -7,7 +7,8 @@ data:
   NODE_ENV: production
   PORT: "3000"
   REDIS_URL: redis://redis:6379
-  AUTH_MODE: dev-bypass
-  APP_URL: http://34.60.158.138
-  API_URL: http://34.60.158.138
-  COOKIE_SECURE: "false"
+  APP_URL: https://siesta.cjett.net
+  API_URL: https://siesta.cjett.net
+  COOKIE_SECURE: "true"
+  MCP_SERVER_URL: http://agentgateway.siesta.svc.cluster.local:3001/mcp
+  OPENAI_BASE_URL: http://agentgateway.siesta.svc.cluster.local:3001/v1

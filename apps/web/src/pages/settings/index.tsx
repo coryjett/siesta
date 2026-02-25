@@ -1,105 +1,42 @@
 import { useState } from 'react';
 import type { UserRole } from '@siesta/shared';
-import { useConnectionStatus, useSyncStatus, useUsers, useSettings } from '../../api/queries/settings';
-import {
-  useSaveSfConnection,
-  useSaveGongConnection,
-  useUpdateSeFieldMapping,
-  useUpdateUserRole,
-  useTriggerSync,
-} from '../../api/mutations/settings';
-import OAuthConnection, { type FieldConfig } from '../../components/settings/oauth-connection';
+import { useUsers, useSupportMcpStatus, useCacheStats, useOpenAiStatus } from '../../api/queries/settings';
+import { useUpdateUserRole, useDisconnectSupportMcp, useFlushCache } from '../../api/mutations/settings';
+import Badge from '../../components/common/badge';
 import RoleManager from '../../components/settings/role-manager';
-import SyncStatusTable from '../../components/settings/sync-status';
 import Card from '../../components/common/card';
 import { useTheme } from '../../contexts/theme-context';
 
-type TabId = 'connections' | 'field-mapping' | 'users' | 'sync' | 'preferences';
+type TabId = 'users' | 'integrations' | 'ai' | 'cache' | 'preferences';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'connections', label: 'Connections' },
-  { id: 'field-mapping', label: 'Field Mapping' },
   { id: 'users', label: 'User Management' },
-  { id: 'sync', label: 'Sync Status' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'ai', label: 'AI' },
+  { id: 'cache', label: 'Cache' },
   { id: 'preferences', label: 'Preferences' },
 ];
 
-const SF_FIELDS: FieldConfig[] = [
-  { name: 'sessionId', label: 'Session ID', type: 'password', placeholder: 'Paste your Salesforce session cookie (sid)' },
-  { name: 'instanceUrl', label: 'Instance URL', type: 'url', placeholder: 'https://yourorg.my.salesforce.com' },
-];
-
-const GONG_FIELDS: FieldConfig[] = [
-  { name: 'clientId', label: 'Client ID', type: 'text', placeholder: 'Gong API Client ID' },
-  { name: 'clientSecret', label: 'Client Secret', type: 'password', placeholder: 'Gong API Client Secret' },
-];
-
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('connections');
-  const [fieldApiName, setFieldApiName] = useState('');
-  const [fieldMappingSaved, setFieldMappingSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>('users');
 
   // Queries
-  const { data: connections, isLoading: connectionsLoading } = useConnectionStatus();
-  const { data: syncStatuses, isLoading: syncLoading } = useSyncStatus();
   const { data: users, isLoading: usersLoading } = useUsers();
-  const { data: settings } = useSettings();
 
   // Mutations
-  const saveSfConnection = useSaveSfConnection();
-  const saveGongConnection = useSaveGongConnection();
-  const updateFieldMapping = useUpdateSeFieldMapping();
   const updateUserRole = useUpdateUserRole();
-  const triggerSync = useTriggerSync();
-
-  // Initialize field mapping from settings
-  const currentFieldApiName =
-    settings?.find((s) => s.key === 'se_field_api_name')?.value ?? '';
-
-  const handleSfSubmit = (values: Record<string, string>) => {
-    saveSfConnection.mutate({
-      sessionId: values.sessionId,
-      instanceUrl: values.instanceUrl,
-    });
-  };
-
-  const handleGongSubmit = (values: Record<string, string>) => {
-    saveGongConnection.mutate({
-      clientId: values.clientId,
-      clientSecret: values.clientSecret,
-    });
-  };
-
-  const handleFieldMappingSave = () => {
-    const nameToSave = fieldApiName || currentFieldApiName;
-    if (!nameToSave) return;
-
-    updateFieldMapping.mutate(
-      { fieldApiName: nameToSave },
-      {
-        onSuccess: () => {
-          setFieldMappingSaved(true);
-          setTimeout(() => setFieldMappingSaved(false), 3000);
-        },
-      },
-    );
-  };
 
   const handleUpdateRole = (userId: string, role: UserRole, sfUserId: string | null) => {
     updateUserRole.mutate({ userId, role, sfUserId });
   };
 
-  const handleTriggerSync = (provider: string) => {
-    triggerSync.mutate(provider);
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-[#f9f9fb] dark:bg-[#0d0c12]">
       <div className="max-w-6xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Settings</h1>
+        <h1 className="font-display text-2xl font-bold text-[#191726] dark:text-[#f2f2f2] mb-6">Settings</h1>
 
         {/* Tab Navigation */}
-        <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
+        <div className="border-b border-[#dedde4] dark:border-[#2a2734] mb-6">
           <nav className="-mb-px flex gap-6">
             {TABS.map((tab) => (
               <button
@@ -107,8 +44,8 @@ export default function SettingsPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`py-3 px-1 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.id
-                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                    ? 'border-[#6b26d9] text-[#6b26d9] dark:text-[#8249df]'
+                    : 'border-transparent text-[#6b677e] dark:text-[#858198] hover:text-[#191726] dark:hover:text-[#f2f2f2] hover:border-[#dedde4] dark:hover:border-[#2a2734]'
                 }`}
               >
                 {tab.label}
@@ -118,105 +55,10 @@ export default function SettingsPage() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'connections' && (
-          <div className="space-y-6">
-            {connectionsLoading ? (
-              <p className="text-gray-500 text-sm">Loading connection status...</p>
-            ) : (
-              <>
-                <OAuthConnection
-                  provider="salesforce"
-                  title="Salesforce Connection"
-                  fields={SF_FIELDS}
-                  onSubmit={handleSfSubmit}
-                  isConnected={connections?.salesforce.connected ?? false}
-                  isConfigured={connections?.salesforce.configured ?? false}
-                  isLoading={saveSfConnection.isPending}
-                />
-
-                {saveSfConnection.isSuccess && (
-                  <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
-                    Salesforce connection saved successfully.
-                  </div>
-                )}
-                {saveSfConnection.isError && (
-                  <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
-                    Failed to save Salesforce connection. Please check your credentials.
-                  </div>
-                )}
-
-                <OAuthConnection
-                  provider="gong"
-                  title="Gong Connection"
-                  fields={GONG_FIELDS}
-                  onSubmit={handleGongSubmit}
-                  isConnected={connections?.gong.connected ?? false}
-                  isConfigured={connections?.gong.configured ?? false}
-                  isLoading={saveGongConnection.isPending}
-                />
-
-                {saveGongConnection.isSuccess && (
-                  <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
-                    Gong connection saved successfully.
-                  </div>
-                )}
-                {saveGongConnection.isError && (
-                  <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
-                    Failed to save Gong connection. Please check your credentials.
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'field-mapping' && (
-          <Card title="SE Assignment Field Mapping">
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Configure the Salesforce Opportunity field API name used to identify the assigned
-              Sales Engineer. This field is used during sync to associate opportunities with SE
-              users.
-            </p>
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
-                <label
-                  htmlFor="se-field-api-name"
-                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >
-                  Field API Name
-                </label>
-                <input
-                  id="se-field-api-name"
-                  type="text"
-                  value={fieldApiName || currentFieldApiName}
-                  onChange={(e) => setFieldApiName(e.target.value)}
-                  placeholder="e.g. SE_Assigned__c"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                />
-              </div>
-              <button
-                onClick={handleFieldMappingSave}
-                disabled={updateFieldMapping.isPending}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {updateFieldMapping.isPending ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-            {fieldMappingSaved && (
-              <p className="mt-3 text-sm text-green-600">Field mapping saved successfully.</p>
-            )}
-            {updateFieldMapping.isError && (
-              <p className="mt-3 text-sm text-red-600">
-                Failed to save field mapping. Please enter a valid field API name.
-              </p>
-            )}
-          </Card>
-        )}
-
         {activeTab === 'users' && (
           <>
             {usersLoading ? (
-              <p className="text-gray-500 text-sm">Loading users...</p>
+              <p className="text-[#6b677e] text-sm">Loading users...</p>
             ) : (
               <RoleManager
                 users={users ?? []}
@@ -225,47 +67,365 @@ export default function SettingsPage() {
               />
             )}
             {updateUserRole.isSuccess && (
-              <div className="mt-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
+              <div className="mt-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
                 User role updated successfully.
               </div>
             )}
             {updateUserRole.isError && (
-              <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
+              <div className="mt-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
                 Failed to update user role.
               </div>
             )}
           </>
         )}
 
-        {activeTab === 'sync' && (
-          <>
-            {syncLoading ? (
-              <p className="text-gray-500 text-sm">Loading sync status...</p>
-            ) : (
-              <SyncStatusTable
-                statuses={syncStatuses ?? []}
-                onTriggerSync={handleTriggerSync}
-                isSyncing={triggerSync.isPending}
-              />
-            )}
-            {triggerSync.isSuccess && (
-              <div className="mt-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-400">
-                Sync triggered successfully.
-              </div>
-            )}
-            {triggerSync.isError && (
-              <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
-                Failed to trigger sync.
-              </div>
-            )}
-          </>
-        )}
+        {activeTab === 'integrations' && <IntegrationsTab />}
+
+        {activeTab === 'ai' && <AiTab />}
+
+        {activeTab === 'cache' && <CacheTab />}
 
         {activeTab === 'preferences' && <PreferencesTab />}
       </div>
     </div>
   );
 }
+
+// ── Integrations Tab ──
+
+function IntegrationsTab() {
+  const { data: status, isLoading } = useSupportMcpStatus();
+  const disconnect = useDisconnectSupportMcp();
+
+  const handleConnect = () => {
+    window.location.href = '/auth/support-mcp/connect';
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card title="Support Agent Tools">
+        <p className="text-sm text-[#6b677e] dark:text-[#858198] mb-4">
+          Connect to the Support Agent Tools MCP server to access additional customer support data and tooling.
+        </p>
+
+        {isLoading ? (
+          <p className="text-sm text-[#6b677e] dark:text-[#858198]">Checking connection status...</p>
+        ) : status?.connected ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-green-500" />
+              <span className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">Connected</span>
+              {status.connectedAt && (
+                <span className="text-xs text-[#6b677e] dark:text-[#858198]">
+                  since {new Date(status.connectedAt).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => disconnect.mutate()}
+              disabled={disconnect.isPending}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-800 px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+            >
+              {disconnect.isPending ? 'Disconnecting...' : 'Disconnect'}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleConnect}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#6b26d9] dark:bg-[#8249df] px-4 py-2 text-sm font-medium text-white hover:bg-[#5a1fb8] dark:hover:bg-[#7040c0] transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            Connect
+          </button>
+        )}
+
+        {disconnect.isError && (
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400">Failed to disconnect.</p>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ── AI Tab ──
+
+function AiTab() {
+  const { data, isLoading } = useOpenAiStatus();
+
+  if (isLoading) {
+    return <p className="text-sm text-[#6b677e] dark:text-[#858198]">Checking OpenAI status...</p>;
+  }
+
+  if (!data) {
+    return <p className="text-sm text-[#6b677e] dark:text-[#858198]">Unable to load OpenAI status.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card title="OpenAI Integration">
+        <div className="space-y-5">
+          {/* Connection status */}
+          <div className="flex items-center gap-3">
+            <span className={`flex h-2.5 w-2.5 rounded-full ${data.connected ? 'bg-green-500' : data.configured ? 'bg-yellow-500' : 'bg-red-500'}`} />
+            <span className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">OpenAI</span>
+            <Badge variant={data.connected ? 'success' : data.configured ? 'warning' : 'danger'}>
+              {data.connected ? 'Connected' : data.configured ? 'Configured (not reachable)' : 'Not Configured'}
+            </Badge>
+          </div>
+
+          {/* Details */}
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-4">
+            <Metric label="API Key" value={data.configured ? 'Set' : 'Missing'} />
+            <Metric label="Base URL" value={data.baseUrl} />
+            {data.model && <Metric label="Model" value={data.model} />}
+            {data.latencyMs != null && <Metric label="Latency" value={`${data.latencyMs}ms`} />}
+          </div>
+
+          {data.error && (
+            <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 px-4 py-3">
+              <p className="text-sm text-red-600 dark:text-red-400">{data.error}</p>
+            </div>
+          )}
+
+          {/* Cache stats */}
+          <div className="border-t border-[#dedde4] dark:border-[#2a2734] pt-4">
+            <p className="text-[11px] uppercase tracking-wide text-[#6b677e] dark:text-[#858198] mb-3">Cached AI Responses</p>
+            <div className="grid grid-cols-2 gap-x-8 sm:grid-cols-4">
+              <Metric label="Account Overviews" value={data.cache.accountOverviews.toLocaleString()} detail="1 hour TTL" />
+              <Metric label="Thread Summaries" value={data.cache.threadSummaries.toLocaleString()} detail="24 hour TTL" />
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Features">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-lg border border-[#dedde4] dark:border-[#2a2734] px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">Account Overview</p>
+              <p className="text-xs text-[#6b677e] dark:text-[#858198]">AI-generated summary of account health, opportunities, and activity on account detail pages</p>
+            </div>
+            <Badge variant={data.configured ? 'success' : 'default'}>
+              {data.configured ? 'Active' : 'Inactive'}
+            </Badge>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-[#dedde4] dark:border-[#2a2734] px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">Email Thread Summaries</p>
+              <p className="text-xs text-[#6b677e] dark:text-[#858198]">AI-generated summaries of email thread conversations when viewing thread details</p>
+            </div>
+            <Badge variant={data.configured ? 'success' : 'default'}>
+              {data.configured ? 'Active' : 'Inactive'}
+            </Badge>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ── Cache Tab ──
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+}
+
+function formatTtl(ms: number): string {
+  if (ms === 0) return 'N/A';
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h`;
+}
+
+function formatCpu(seconds: number): string {
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = (seconds % 60).toFixed(0);
+  return `${minutes}m ${secs}s`;
+}
+
+function CacheTab() {
+  const { data, isLoading } = useCacheStats();
+  const flush = useFlushCache();
+
+  if (isLoading) {
+    return <p className="text-sm text-[#6b677e] dark:text-[#858198]">Loading cache stats...</p>;
+  }
+
+  if (!data) {
+    return <p className="text-sm text-[#6b677e] dark:text-[#858198]">Unable to load cache stats.</p>;
+  }
+
+  const warmupVariant = {
+    idle: 'default' as const,
+    running: 'info' as const,
+    completed: 'success' as const,
+    failed: 'danger' as const,
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <div className="space-y-5">
+          {/* Header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className={`flex h-2 w-2 rounded-full ${data.connected ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">Redis</span>
+              <Badge variant={data.connected ? 'success' : 'danger'}>
+                {data.connected ? 'Connected' : 'Disconnected'}
+              </Badge>
+              {data.server && (
+                <span className="text-xs text-[#6b677e] dark:text-[#858198]">
+                  v{data.server.redisVersion} &middot; up {formatUptime(data.server.uptimeSeconds)}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => flush.mutate()}
+              disabled={flush.isPending || !data.connected}
+              className="rounded-lg border border-red-200 dark:border-red-800 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+            >
+              {flush.isPending ? 'Flushing...' : 'Flush Cache'}
+            </button>
+          </div>
+
+          {/* Warmup status */}
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-[#6b677e] dark:text-[#858198]">Warmup</span>
+            <Badge variant={warmupVariant[data.warmup.status]}>{data.warmup.status}</Badge>
+            {data.warmup.completedAt && (
+              <span className="text-xs text-[#6b677e] dark:text-[#858198]">
+                {new Date(data.warmup.completedAt).toLocaleString()}
+                {data.warmup.durationMs != null && ` (${(data.warmup.durationMs / 1000).toFixed(1)}s)`}
+                {data.warmup.accountCount != null && ` \u00b7 ${data.warmup.accountCount} accounts`}
+              </span>
+            )}
+            {data.warmup.error && (
+              <span className="text-xs text-red-600 dark:text-red-400">{data.warmup.error}</span>
+            )}
+          </div>
+
+          {flush.isSuccess && (
+            <p className="text-xs text-green-600 dark:text-green-400">Cache flushed successfully.</p>
+          )}
+          {flush.isError && (
+            <p className="text-xs text-red-600 dark:text-red-400">Failed to flush cache.</p>
+          )}
+
+          {/* Key stats + hit rate */}
+          {data.stats && (
+            <div className="grid grid-cols-3 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-5">
+              <Metric label="Stored Keys" value={data.stats.totalKeys.toLocaleString()} detail={`${data.stats.mcpKeys.toLocaleString()} MCP \u00b7 ${data.stats.supportMcpKeys.toLocaleString()} Support`} />
+              <Metric label="Hit Rate" value={`${data.stats.hitRate}%`} detail={`${data.stats.hits.toLocaleString()} hits \u00b7 ${data.stats.misses.toLocaleString()} misses`} />
+              <Metric label="Evicted" value={data.stats.evictedKeys.toLocaleString()} detail="capacity drops" />
+              <Metric label="Expired" value={data.stats.expiredKeys.toLocaleString()} detail="TTL expirations" />
+              <Metric label="Avg TTL" value={formatTtl(data.stats.avgTtlMs)} />
+            </div>
+          )}
+
+          {/* Server + performance */}
+          {(data.server || data.stats) && (
+            <div className="grid grid-cols-3 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-5">
+              {data.server && (
+                <>
+                  <Metric label="Ping Latency" value={`${data.server.pingLatencyMs}ms`} />
+                  <Metric label="Clients" value={data.server.connectedClients.toLocaleString()} detail={data.server.blockedClients > 0 ? `${data.server.blockedClients} blocked` : undefined} />
+                  <Metric label="Connections" value={data.server.totalConnectionsReceived.toLocaleString()} detail={data.server.rejectedConnections > 0 ? `${data.server.rejectedConnections} rejected` : 'total received'} />
+                </>
+              )}
+              {data.stats && (
+                <>
+                  <Metric label="Ops/sec" value={data.stats.instantaneousOpsPerSec.toLocaleString()} />
+                  <Metric label="Commands" value={data.stats.totalCommandsProcessed.toLocaleString()} />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Memory + CPU + Network */}
+          {(data.memory || data.cpu || data.stats) && (
+            <div className="grid grid-cols-3 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-5">
+              {data.memory && (
+                <>
+                  <Metric label="Memory" value={data.memory.usedMemory} detail={`peak ${data.memory.usedMemoryPeak}`} />
+                  <Metric label="Fragmentation" value={`${data.memory.fragmentationRatio}x`} />
+                </>
+              )}
+              {data.cpu && (
+                <Metric label="CPU" value={formatCpu(data.cpu.usedCpuSys + data.cpu.usedCpuUser)} detail={`sys ${formatCpu(data.cpu.usedCpuSys)} \u00b7 user ${formatCpu(data.cpu.usedCpuUser)}`} />
+              )}
+              {data.stats && (
+                <Metric label="Network I/O" value={`${formatBytes(data.stats.networkInputBytes)} / ${formatBytes(data.stats.networkOutputBytes)}`} detail="in / out" />
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Per-prefix key breakdown */}
+      {data.stats?.keysByPrefix && data.stats.keysByPrefix.length > 0 && (
+        <Card title="Keys by Prefix">
+          <div className="space-y-1.5">
+            {data.stats.keysByPrefix.map(({ prefix, count }) => {
+              const pct = data.stats!.totalKeys > 0 ? (count / data.stats!.totalKeys) * 100 : 0;
+              return (
+                <div key={prefix} className="flex items-center gap-3">
+                  <code className="w-48 shrink-0 truncate text-xs text-[#191726] dark:text-[#f2f2f2]">{prefix}</code>
+                  <div className="flex-1 h-4 rounded-full bg-[#eeedf3] dark:bg-[#1e1b29] overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#6b26d9] dark:bg-[#8249df] transition-all"
+                      style={{ width: `${Math.max(pct, 1)}%` }}
+                    />
+                  </div>
+                  <span className="w-16 shrink-0 text-right text-xs tabular-nums text-[#6b677e] dark:text-[#858198]">
+                    {count.toLocaleString()}
+                  </span>
+                  <span className="w-12 shrink-0 text-right text-xs tabular-nums text-[#6b677e] dark:text-[#858198]">
+                    {pct.toFixed(1)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-[#6b677e] dark:text-[#858198]">{label}</p>
+      <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">{value}</p>
+      {detail && <p className="text-[11px] text-[#6b677e] dark:text-[#858198]">{detail}</p>}
+    </div>
+  );
+}
+
+// ── Preferences Tab ──
 
 const THEME_OPTIONS = [
   {
@@ -315,7 +475,7 @@ function PreferencesTab() {
 
   return (
     <Card title="Appearance">
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+      <p className="text-sm text-[#6b677e] dark:text-[#858198] mb-4">
         Choose how Siesta looks to you. Select a single theme or sync with your system settings.
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -324,19 +484,19 @@ function PreferencesTab() {
             key={option.value}
             type="button"
             onClick={() => setTheme(option.value)}
-            className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 text-center transition-colors ${
+            className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 text-center transition-colors ${
               theme === option.value
-                ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950'
-                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                ? 'border-[#6b26d9] bg-[#6b26d9]/5 dark:bg-[#8249df]/10'
+                : 'border-[#dedde4] dark:border-[#2a2734] hover:border-[#6b26d9]/30 dark:hover:border-[#8249df]/30'
             }`}
           >
-            <span className={theme === option.value ? 'text-indigo-600' : 'text-gray-400 dark:text-gray-500'}>
+            <span className={theme === option.value ? 'text-[#6b26d9] dark:text-[#8249df]' : 'text-[#6b677e] dark:text-[#858198]'}>
               {option.icon}
             </span>
-            <span className={`text-sm font-medium ${theme === option.value ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-900 dark:text-gray-100'}`}>
+            <span className={`text-sm font-medium ${theme === option.value ? 'text-[#6b26d9] dark:text-[#8249df]' : 'text-[#191726] dark:text-[#f2f2f2]'}`}>
               {option.label}
             </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-[#6b677e] dark:text-[#858198]">
               {option.description}
             </span>
           </button>

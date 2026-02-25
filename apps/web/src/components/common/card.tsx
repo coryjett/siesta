@@ -2,7 +2,7 @@ import clsx from 'clsx';
 import type { HTMLAttributes, ReactNode } from 'react';
 
 interface CardProps {
-  title?: string;
+  title?: ReactNode;
   children: ReactNode;
   className?: string;
   dragHandleProps?: HTMLAttributes<HTMLButtonElement>;
@@ -17,7 +17,7 @@ export default function Card({
   return (
     <div
       className={clsx(
-        'bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6',
+        'bg-white dark:bg-[#14131b] rounded-xl shadow-sm border border-[#dedde4] dark:border-[#2a2734] p-6',
         className,
       )}
     >
@@ -26,7 +26,7 @@ export default function Card({
           {dragHandleProps && (
             <button
               type="button"
-              className="cursor-grab touch-none rounded p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 active:cursor-grabbing"
+              className="cursor-grab touch-none rounded-xl p-1 text-[#6b677e] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f] hover:text-[#191726] dark:hover:text-[#f2f2f2] active:cursor-grabbing"
               aria-label="Drag to reorder"
               {...dragHandleProps}
             >
@@ -46,7 +46,7 @@ export default function Card({
               </svg>
             </button>
           )}
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
+          <h3 className="font-display text-lg font-semibold text-[#191726] dark:text-[#f2f2f2]">{title}</h3>
         </div>
       )}
       {children}

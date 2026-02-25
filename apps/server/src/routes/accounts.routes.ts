@@ -3,43 +3,66 @@ import { requireAuth } from '../auth/guards.js';
 import {
   listAccounts,
   getAccount,
-  getAccountOpportunities,
   getAccountContacts,
-  getAccountActivities,
-  getAccountOpportunitiesWithCalls,
-} from '../services/accounts.service.js';
+  getAccountInteractions,
+  getAccountOpportunities,
+  getAccountIssues,
+  getAccountTasks,
+  getAccountArchitecture,
+  getAccountSentiment,
+} from '../services/mcp-accounts.service.js';
+import { getInteractionDetail } from '../services/mcp-interactions.service.js';
+import { summarizeEmailThread, summarizeAccount, extractActionItems } from '../services/openai-summary.service.js';
 
 export async function accountsRoutes(app: FastifyInstance) {
-  // All routes require authentication
   app.addHook('preHandler', requireAuth);
 
   /**
    * GET /api/accounts
-   * List accounts with optional search and pagination.
-   * SEs are scoped to their own accounts; managers/admins can filter by SE.
+   * List accounts with optional filters.
    */
   app.get<{
-    Querystring: { search?: string; assignedSeUserId?: string; page?: string; pageSize?: string };
+    Querystring: {
+      search?: string;
+      healthStatus?: string;
+      region?: string;
+      csmOwner?: string;
+      minArr?: string;
+      maxArr?: string;
+      renewalWithinDays?: string;
+      products?: string;
+    };
   }>('/api/accounts', async (request, reply) => {
-    const { search, assignedSeUserId, page, pageSize } = request.query;
-    const user = request.user;
-
-    // SEs are scoped to their own accounts; managers/admins can optionally filter by SE
-    let seFilter: string | undefined;
-    if (user.role === 'se') {
-      seFilter = user.id;
-    } else if (assignedSeUserId) {
-      seFilter = assignedSeUserId;
-    }
+    const { search, healthStatus, region, csmOwner, minArr, maxArr, renewalWithinDays, products } = request.query;
 
     const result = await listAccounts({
       search: search || undefined,
-      assignedSeUserId: seFilter,
-      page: page ? parseInt(page, 10) : undefined,
-      pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
+      healthStatus: healthStatus || undefined,
+      region: region || undefined,
+      csmOwner: csmOwner || undefined,
+      minArr: minArr ? parseFloat(minArr) : undefined,
+      maxArr: maxArr ? parseFloat(maxArr) : undefined,
+      renewalWithinDays: renewalWithinDays ? parseInt(renewalWithinDays, 10) : undefined,
+      products: products ? products.split(',') : undefined,
     });
 
-    return reply.send(result);
+    // Enrich accounts with open pipeline totals from opportunities
+    const enriched = await Promise.all(
+      result.map(async (account: Record<string, unknown>) => {
+        try {
+          const opps = await getAccountOpportunities(account.id as string) as Array<{ arr?: number; stage?: string }>;
+          const openPipeline = opps
+            .filter((o) => o.stage && !o.stage.toLowerCase().includes('closed'))
+            .filter((o) => !((o as Record<string, unknown>).name as string ?? '').toLowerCase().includes('renewal'))
+            .reduce((sum, o) => sum + (o.arr ?? 0), 0);
+          return { ...account, openPipeline };
+        } catch {
+          return { ...account, openPipeline: null };
+        }
+      }),
+    );
+
+    return reply.send(enriched);
   });
 
   /**
@@ -51,30 +74,6 @@ export async function accountsRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const account = await getAccount(request.params.id);
       return reply.send(account);
-    },
-  );
-
-  /**
-   * GET /api/accounts/:id/opportunities
-   * Get all opportunities for an account.
-   */
-  app.get<{ Params: { id: string } }>(
-    '/api/accounts/:id/opportunities',
-    async (request, reply) => {
-      const opportunities = await getAccountOpportunities(request.params.id);
-      return reply.send(opportunities);
-    },
-  );
-
-  /**
-   * GET /api/accounts/:id/opportunities-with-calls
-   * Get all opportunities for an account with their Gong calls nested.
-   */
-  app.get<{ Params: { id: string } }>(
-    '/api/accounts/:id/opportunities-with-calls',
-    async (request, reply) => {
-      const result = await getAccountOpportunitiesWithCalls(request.params.id);
-      return reply.send(result);
     },
   );
 
@@ -91,14 +90,217 @@ export async function accountsRoutes(app: FastifyInstance) {
   );
 
   /**
-   * GET /api/accounts/:id/activities
-   * Get all activities for an account.
+   * GET /api/accounts/:id/interactions
+   * Get recent interactions for an account.
+   */
+  app.get<{
+    Params: { id: string };
+    Querystring: { sourceTypes?: string; fromDate?: string; toDate?: string; limit?: string };
+  }>(
+    '/api/accounts/:id/interactions',
+    async (request, reply) => {
+      const { sourceTypes, fromDate, toDate, limit } = request.query;
+      const interactions = await getAccountInteractions(request.params.id, {
+        sourceTypes: sourceTypes ? sourceTypes.split(',') : undefined,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        limit: limit ? parseInt(limit, 10) : undefined,
+      });
+      return reply.send(interactions);
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/opportunities
+   * Get all opportunities for an account.
    */
   app.get<{ Params: { id: string } }>(
-    '/api/accounts/:id/activities',
+    '/api/accounts/:id/opportunities',
     async (request, reply) => {
-      const activities = await getAccountActivities(request.params.id);
-      return reply.send(activities);
+      const opportunities = await getAccountOpportunities(request.params.id);
+      return reply.send(opportunities);
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/issues
+   * Get open issues for an account.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/issues',
+    async (request, reply) => {
+      const issues = await getAccountIssues(request.params.id);
+      return reply.send(issues);
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/tasks
+   * Get tasks for an account.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/tasks',
+    async (request, reply) => {
+      const tasks = await getAccountTasks(request.params.id);
+      return reply.send(tasks);
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/architecture
+   * Get architecture documentation for an account.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/architecture',
+    async (request, reply) => {
+      const doc = await getAccountArchitecture(request.params.id);
+      return reply.send(doc);
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/sentiment
+   * Get sentiment trends for an account.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/sentiment',
+    async (request, reply) => {
+      const sentiment = await getAccountSentiment(request.params.id);
+      return reply.send(sentiment);
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/overview
+   * AI-generated account overview using OpenAI. Runs in the background, cached 1 hour.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/overview',
+    async (request, reply) => {
+      const overview = await summarizeAccount(request.params.id);
+      return reply.send({ overview });
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/action-items
+   * AI-extracted action items from recent calls and emails.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/action-items',
+    async (request, reply) => {
+      const items = await extractActionItems(request.params.id);
+      return reply.send({ items });
+    },
+  );
+
+  /**
+   * POST /api/accounts/:id/email-thread-summary
+   * Summarize an email thread using OpenAI.
+   */
+  app.post<{
+    Params: { id: string };
+    Body: { emailIds: string[]; emails?: Array<{ id: string; title: string; preview?: string; date: string; participants?: string[] }> };
+  }>(
+    '/api/accounts/:id/email-thread-summary',
+    async (request, reply) => {
+      const { emailIds, emails: clientEmails } = request.body;
+      if (!emailIds?.length) {
+        return reply.status(400).send({ error: 'emailIds required' });
+      }
+
+      // Build a map of fallback data from the client (list-level data)
+      const fallbackMap = new Map<string, { title: string; preview?: string; date: string; participants?: string[] }>();
+      if (clientEmails) {
+        for (const e of clientEmails) {
+          fallbackMap.set(e.id, e);
+        }
+      }
+
+      // Error patterns from MCP that indicate missing data
+      const errorPatterns = ['no rows in result set', 'not found', 'error:'];
+
+      const emailDetails = await Promise.all(
+        emailIds.map(async (emailId) => {
+          try {
+            const detail = await getInteractionDetail(
+              request.params.id,
+              'gmail_email',
+              emailId,
+            );
+
+            // Check if the content is actually an error message from MCP
+            const content = detail?.content ?? '';
+            const isError = errorPatterns.some((p) => content.toLowerCase().includes(p));
+
+            if (isError || !content) {
+              // Fall back to client-provided preview data
+              const fallback = fallbackMap.get(emailId);
+              if (fallback?.preview) {
+                return {
+                  title: fallback.title,
+                  content: fallback.preview,
+                  date: fallback.date,
+                  participants: (fallback.participants ?? []).map((p: string) => ({ name: p, email: null })),
+                };
+              }
+              return null;
+            }
+
+            return detail;
+          } catch {
+            // Fall back to client-provided preview data
+            const fallback = fallbackMap.get(emailId);
+            if (fallback?.preview) {
+              return {
+                title: fallback.title,
+                content: fallback.preview,
+                date: fallback.date,
+                participants: (fallback.participants ?? []).map((p: string) => ({ name: p, email: null })),
+              };
+            }
+            return null;
+          }
+        }),
+      );
+
+      const validEmails = emailDetails.filter(
+        (e): e is NonNullable<typeof e> => e != null,
+      );
+
+      if (validEmails.length === 0) {
+        return reply.send({ summary: null, emailCount: 0, participants: [] });
+      }
+
+      const allParticipants = [
+        ...new Set(
+          validEmails.flatMap((e) =>
+            (e.participants ?? []).map(
+              (p: { name: string; email: string | null }) =>
+                p.name || p.email || 'Unknown',
+            ),
+          ),
+        ),
+      ];
+
+      const summary = await summarizeEmailThread(
+        emailIds,
+        validEmails.map((e) => ({
+          title: e.title,
+          content: e.content,
+          date: e.date,
+          participants: (e.participants ?? []).map(
+            (p: { name: string; email: string | null }) =>
+              p.name || p.email || 'Unknown',
+          ),
+        })),
+      );
+
+      return reply.send({
+        summary,
+        emailCount: validEmails.length,
+        participants: allParticipants,
+      });
     },
   );
 }

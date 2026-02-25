@@ -36,7 +36,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+    try {
+      const res = await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+      const data = await res.json();
+      if (data.logoutUrl) {
+        // Redirect to Keycloak logout BEFORE updating state to avoid
+        // the router racing to /login and auto-redirecting to Keycloak
+        window.location.href = data.logoutUrl;
+        return;
+      }
+    } catch {
+      // fall through
+    }
     setState({ user: null, isAuthenticated: false, isLoading: false });
     window.location.href = '/login';
   };

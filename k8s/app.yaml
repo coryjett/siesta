@@ -42,7 +42,7 @@ metadata:
   name: siesta
   namespace: siesta
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: siesta
   ports:

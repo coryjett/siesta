@@ -1,3 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+@font-face {
+  font-family: 'Clash Display';
+  src: url('https://fonts.cdnfonts.com/css/clash-display') format('truetype');
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Clash Display', 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-primary: #6b26d9;
+  --color-primary-hover: #7c3aed;
+  --color-primary-light: #6b26d9/10;
+
+  --color-background: #f9f9fb;
+  --color-foreground: #191726;
+  --color-card: #ffffff;
+  --color-border: #dedde4;
+  --color-muted: #e9e8ed;
+  --color-muted-fg: #6b677e;
+  --color-accent: #e3e2e9;
+  --color-destructive: #db2424;
+
+  --color-critical: #df2020;
+  --color-warning: #da8e0b;
+  --color-healthy: #22a06b;
+
+  --radius-xl: 0.75rem;
+}
+
+/* Dark mode overrides */
+.dark {
+  --color-primary: #8249df;
+  --color-primary-hover: #9a6ae6;
+  --color-primary-light: #8249df/20;
+
+  --color-background: #0d0c12;
+  --color-foreground: #f2f2f2;
+  --color-card: #14131b;
+  --color-border: #2a2734;
+  --color-muted: #25232f;
+  --color-muted-fg: #858198;
+  --color-accent: #2a2734;
+  --color-destructive: #df3a3a;
+
+  --color-critical: #f04242;
+  --color-warning: #f9a91f;
+  --color-healthy: #22c380;
+}
+
+/* Glass effect utility for dark mode */
+.glass-card {
+  background: linear-gradient(135deg, rgba(27,25,36,0.8), rgba(18,17,24,0.9));
+  border-color: rgba(58,55,73,0.5);
+  backdrop-filter: blur(12px);
+}
+
+/* Status glow effects for dark mode */
+.dark .glow-healthy {
+  box-shadow: 0 0 8px rgba(34, 195, 128, 0.3), 0 0 16px rgba(34, 195, 128, 0.1);
+}
+
+.dark .glow-warning {
+  box-shadow: 0 0 8px rgba(249, 169, 31, 0.3), 0 0 16px rgba(249, 169, 31, 0.1);
+}
+
+.dark .glow-critical {
+  box-shadow: 0 0 8px rgba(240, 66, 66, 0.3), 0 0 16px rgba(240, 66, 66, 0.1);
+}
+
+.dark .glow-primary {
+  box-shadow: 0 0 8px rgba(130, 73, 223, 0.3), 0 0 16px rgba(130, 73, 223, 0.1);
+}
+
+/* Base body styles */
+body {
+  font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

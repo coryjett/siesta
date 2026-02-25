@@ -1,0 +1,147 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway
+  namespace: siesta
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+  - name: https
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: siesta-tls
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: mcp-https
+    port: 3000
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: siesta-tls
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: mcp-http
+    port: 3001
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: portfolio-analyzer
+  namespace: siesta
+spec:
+  mcp:
+    targets:
+    - name: portfolio-analyzer
+      static:
+        host: mcp.cs.solo.io
+        port: 443
+        path: /mcp
+        protocol: StreamableHTTP
+        policies:
+          auth:
+            passthrough: {}
+          tls: {}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: portfolio-analyzer
+  namespace: siesta
+spec:
+  parentRefs:
+  - name: agentgateway
+    sectionName: mcp-https
+  - name: agentgateway
+    sectionName: mcp-http
+  rules:
+  - backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: portfolio-analyzer
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: siesta-web
+  namespace: siesta
+spec:
+  parentRefs:
+  - name: agentgateway
+    sectionName: https
+  hostnames:
+  - siesta.cjett.net
+  rules:
+  - backendRefs:
+    - kind: Service
+      name: siesta
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: openai
+  namespace: siesta
+spec:
+  llm:
+    targets:
+    - name: openai
+      static:
+        host: api.openai.com
+        port: 443
+        protocol: HTTPS
+        policies:
+          auth:
+            passthrough: {}
+          tls: {}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: openai-proxy
+  namespace: siesta
+spec:
+  parentRefs:
+  - name: agentgateway
+    sectionName: mcp-http
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /v1
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: openai
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: siesta-auth
+  namespace: siesta
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: agentgateway
+    sectionName: mcp-https
+  traffic:
+    apiKeyAuthentication:
+      mode: Strict
+      secretRef:
+        name: siesta-agw-apikey

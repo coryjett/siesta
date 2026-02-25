@@ -1,9 +1,9 @@
-import type { SfOpportunity } from '@siesta/shared';
+import type { Opportunity } from '@siesta/shared';
 import OpportunityCard from './opportunity-card';
 import EmptyState from '../common/empty-state';
 
 interface OpportunityListProps {
-  opportunities: SfOpportunity[];
+  opportunities: Opportunity[];
   emptyTitle?: string;
   emptyDescription?: string;
   className?: string;

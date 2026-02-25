@@ -3,7 +3,6 @@ import { Link } from '@tanstack/react-router';
 import clsx from 'clsx';
 import { useAuth } from '../../contexts/auth-context';
 import Badge from '../common/badge';
-import { useUpcomingMeetings, type CalendarEvent } from '../../api/queries/calendar';
 
 const STORAGE_KEY = 'siesta:sidebar-collapsed';
 
@@ -15,9 +14,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Home', to: '/', icon: 'H' },
-  { label: 'Opportunities', to: '/opportunities/kanban', icon: 'O' },
   { label: 'Accounts', to: '/accounts', icon: 'A' },
-  { label: 'Gong Search', to: '/gong/search', icon: 'G' },
+  { label: 'Search', to: '/search', icon: 'S' },
 ];
 
 const roleLabels: Record<string, string> = {
@@ -28,66 +26,14 @@ const roleLabels: Record<string, string> = {
 
 function NavIcon({ letter }: { letter: string }) {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-indigo-100 dark:bg-indigo-900 text-sm font-semibold text-indigo-600 dark:text-indigo-400">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#6b26d9]/10 dark:bg-[#8249df]/20 text-sm font-semibold text-[#6b26d9] dark:text-[#8249df]">
       {letter}
     </span>
   );
 }
 
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffMin = Math.round(diffMs / 60000);
-
-  if (diffMin < 0) {
-    const absDiff = Math.abs(diffMin);
-    if (absDiff < 60) return `${absDiff}m ago`;
-    return `${Math.round(absDiff / 60)}h ago`;
-  }
-  if (diffMin < 60) return `in ${diffMin}m`;
-  const hours = Math.floor(diffMin / 60);
-  if (hours < 24) return `in ${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `in ${days}d`;
-}
-
-function formatTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
-function MeetingItem({ event }: { event: CalendarEvent }) {
-  return (
-    <div className="py-1.5">
-      <div className="flex items-baseline gap-2">
-        <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
-          {formatTime(event.start)}
-        </span>
-        <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
-          {formatRelativeTime(event.start)}
-        </span>
-      </div>
-      <p className="mt-0.5 truncate text-sm text-gray-700 dark:text-gray-300" title={event.summary}>
-        {event.summary}
-      </p>
-      {event.meetLink && (
-        <a
-          href={event.meetLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-0.5 inline-block text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-        >
-          Join meeting
-        </a>
-      )}
-    </div>
-  );
-}
-
 export default function Sidebar() {
-  const { user, isAuthenticated } = useAuth();
-  const { data: meetings } = useUpcomingMeetings();
+  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) === 'true';
@@ -109,16 +55,16 @@ export default function Sidebar() {
   return (
     <aside
       className={clsx(
-        'flex h-screen flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 transition-[width] duration-200',
+        'flex h-screen flex-col border-r border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#0d0c12] transition-[width] duration-200',
         collapsed ? 'w-16' : 'w-60',
       )}
     >
       {/* Logo */}
-      <div className="flex h-16 items-center border-b border-gray-200 dark:border-gray-700 px-5">
+      <div className="flex h-16 items-center border-b border-[#dedde4] dark:border-[#2a2734] px-5">
         {collapsed ? (
-          <span className="text-xl font-bold text-indigo-600">S</span>
+          <span className="font-display text-xl font-bold text-[#6b26d9] dark:text-[#8249df]">S</span>
         ) : (
-          <span className="text-xl font-bold text-indigo-600">Siesta</span>
+          <span className="font-display text-xl font-bold text-[#6b26d9] dark:text-[#8249df]">Siesta</span>
         )}
       </div>
 
@@ -131,12 +77,12 @@ export default function Sidebar() {
                 to={item.to}
                 activeOptions={{ exact: item.to === '/' }}
                 className={clsx(
-                  'flex items-center rounded-lg py-2 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
+                  'flex items-center rounded-xl py-2 text-sm font-medium text-[#191726] dark:text-[#f2f2f2] transition-colors hover:bg-[#e9e8ed] dark:hover:bg-[#25232f]',
                   collapsed ? 'justify-center px-2' : 'gap-3 px-3',
                 )}
                 activeProps={{
                   className: clsx(
-                    'flex items-center rounded-lg py-2 text-sm font-medium bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400',
+                    'flex items-center rounded-xl py-2 text-sm font-medium bg-[#6b26d9]/10 dark:bg-[#8249df]/20 text-[#6b26d9] dark:text-[#8249df]',
                     collapsed ? 'justify-center px-2' : 'gap-3 px-3',
                   ),
                 }}
@@ -150,27 +96,12 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* Upcoming Meetings */}
-      {isAuthenticated && !collapsed && (
-        <div className="border-t border-gray-200 dark:border-gray-700 px-3 py-3">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Upcoming Meetings
-          </h3>
-          {(!meetings || meetings.length === 0) ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500">No upcoming meetings</p>
-          ) : (
-            <div className="space-y-1 divide-y divide-gray-100 dark:divide-gray-700">
-              {meetings.slice(0, 5).map((event) => (
-                <MeetingItem key={event.id} event={event} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* User section */}
       {user && !collapsed && (
-        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+        <Link
+          to="/settings"
+          className="block border-t border-[#dedde4] dark:border-[#2a2734] p-4 transition-colors hover:bg-[#e9e8ed] dark:hover:bg-[#25232f]"
+        >
           <div className="flex items-center gap-3">
             {user.avatarUrl ? (
               <img
@@ -179,7 +110,7 @@ export default function Sidebar() {
                 className="h-9 w-9 rounded-full object-cover"
               />
             ) : (
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-sm font-medium text-gray-600 dark:text-gray-300">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20 text-sm font-medium text-[#6b26d9] dark:text-[#8249df]">
                 {user.name
                   .split(' ')
                   .map((n) => n[0])
@@ -189,7 +120,7 @@ export default function Sidebar() {
               </span>
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+              <p className="truncate text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">
                 {user.name}
               </p>
               <Badge variant="info" className="mt-0.5">
@@ -197,15 +128,15 @@ export default function Sidebar() {
               </Badge>
             </div>
           </div>
-        </div>
+        </Link>
       )}
 
       {/* Collapse toggle */}
-      <div className={clsx('border-t border-gray-200 dark:border-gray-700 p-2', collapsed && 'flex justify-center')}>
+      <div className={clsx('border-t border-[#dedde4] dark:border-[#2a2734] p-2', collapsed && 'flex justify-center')}>
         <button
           type="button"
           onClick={toggleCollapsed}
-          className="flex w-full items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          className="flex w-full items-center justify-center rounded-xl p-2 text-[#6b677e] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f] hover:text-[#191726] dark:hover:text-[#f2f2f2] transition-colors"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >

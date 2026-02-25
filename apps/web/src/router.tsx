@@ -29,20 +29,6 @@ const homeRoute = createRoute({
   component: lazyRouteComponent(() => import('./pages/home')),
 });
 
-const kanbanRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/opportunities/kanban',
-  component: lazyRouteComponent(() => import('./pages/opportunities/kanban')),
-});
-
-const opportunityDetailRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/opportunities/$opportunityId',
-  component: lazyRouteComponent(
-    () => import('./pages/opportunities/$opportunityId'),
-  ),
-});
-
 const accountsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/accounts',
@@ -55,16 +41,26 @@ const accountDetailRoute = createRoute({
   component: lazyRouteComponent(() => import('./pages/accounts/$accountId')),
 });
 
-const gongSearchRoute = createRoute({
+const searchRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: '/gong/search',
-  component: lazyRouteComponent(() => import('./pages/gong/search')),
+  path: '/search',
+  component: lazyRouteComponent(() => import('./pages/search/index')),
 });
 
-const callDetailRoute = createRoute({
+const interactionDetailRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: '/gong/$callId',
-  component: lazyRouteComponent(() => import('./pages/gong/$callId')),
+  path: '/interactions/$accountId/$sourceType/$recordId',
+  component: lazyRouteComponent(
+    () => import('./pages/interactions/$accountId.$sourceType.$recordId'),
+  ),
+});
+
+const opportunityDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/opportunities/$opportunityId',
+  component: lazyRouteComponent(
+    () => import('./pages/opportunities/$opportunityId'),
+  ),
 });
 
 const settingsRoute = createRoute({
@@ -77,12 +73,11 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   appRoute.addChildren([
     homeRoute,
-    kanbanRoute,
-    opportunityDetailRoute,
     accountsRoute,
     accountDetailRoute,
-    gongSearchRoute,
-    callDetailRoute,
+    searchRoute,
+    interactionDetailRoute,
+    opportunityDetailRoute,
     settingsRoute,
   ]),
 ]);

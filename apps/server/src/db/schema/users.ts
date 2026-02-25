@@ -10,6 +10,7 @@ export const users = pgTable('users', {
   sfUserId: varchar('sf_user_id', { length: 18 }),
   avatarUrl: varchar('avatar_url', { length: 1024 }),
   googleSub: varchar('google_sub', { length: 255 }).unique(),
+  keycloakSub: varchar('keycloak_sub', { length: 255 }).unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

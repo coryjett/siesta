@@ -1,13 +1,11 @@
-import { pgTable, uuid, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
 import { users } from './users';
-import { sfAccounts } from './sf-accounts';
-import { sfOpportunities } from './sf-opportunities';
 
 export const notes = pgTable('notes', {
   id: uuid('id').defaultRandom().primaryKey(),
   authorId: uuid('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  accountId: uuid('account_id').references(() => sfAccounts.id),
-  opportunityId: uuid('opportunity_id').references(() => sfOpportunities.id),
+  accountId: varchar('account_id', { length: 255 }),
+  opportunityId: varchar('opportunity_id', { length: 255 }),
   contentJson: jsonb('content_json').notNull().default({}),
   contentHtml: text('content_html').notNull(),
   contentPlainText: text('content_plain_text').notNull().default(''),
