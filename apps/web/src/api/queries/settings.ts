@@ -32,14 +32,6 @@ export function useUsers() {
 
 export interface CacheStats {
   connected: boolean;
-  warmup: {
-    status: 'idle' | 'running' | 'completed' | 'failed';
-    startedAt: string | null;
-    completedAt: string | null;
-    durationMs: number | null;
-    accountCount: number | null;
-    error: string | null;
-  };
   server: {
     redisVersion: string;
     uptimeSeconds: number;
@@ -82,6 +74,30 @@ export function useCacheStats() {
     queryKey: ['settings', 'cache'],
     queryFn: () => api.get<CacheStats>('/settings/cache/stats'),
     refetchInterval: 10_000,
+  });
+}
+
+export interface WarmupStatus {
+  status: 'idle' | 'warming' | 'complete' | 'error';
+  totalAccounts: number;
+  processedAccounts: number;
+  totalCalls: number;
+  generated: number;
+  skipped: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  error: string | null;
+}
+
+export function useWarmupStatus() {
+  return useQuery<WarmupStatus>({
+    queryKey: ['settings', 'cache', 'warmup-status'],
+    queryFn: () => api.get<WarmupStatus>('/settings/cache/warmup-status'),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      // Poll every 3s while warming, stop when done
+      return status === 'warming' ? 3_000 : false;
+    },
   });
 }
 

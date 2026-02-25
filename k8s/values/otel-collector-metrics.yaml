@@ -1,0 +1,116 @@
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+command:
+  name: otelcol-contrib
+  extraArgs:
+    - --feature-gates=receiver.prometheusreceiver.EnableNativeHistograms
+
+clusterRole:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: [pods, nodes]
+      verbs: [get, list, watch]
+
+ports:
+  promexporter:
+    enabled: true
+    containerPort: 9099
+    servicePort: 9099
+    protocol: TCP
+
+config:
+  receivers:
+    prometheus/kgateway-controlplane:
+      config:
+        global:
+          scrape_protocols:
+            - PrometheusProto
+            - OpenMetricsText1.0.0
+            - OpenMetricsText0.0.1
+            - PrometheusText0.0.4
+        scrape_configs:
+          - job_name: kgateway-controlplane
+            honor_labels: true
+            kubernetes_sd_configs:
+              - role: pod
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_agentgateway]
+                regex: agentgateway
+                action: keep
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                regex: "true"
+                action: keep
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                regex: (.+)
+                target_label: __metrics_path__
+                action: replace
+              - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                separator: ":"
+                target_label: __address__
+                action: replace
+              - regex: __meta_kubernetes_pod_label_(.+)
+                action: labelmap
+              - source_labels: [__meta_kubernetes_namespace]
+                target_label: kube_namespace
+                action: replace
+              - source_labels: [__meta_kubernetes_pod_name]
+                target_label: pod
+                action: replace
+    prometheus/kgateway-dataplane:
+      config:
+        global:
+          scrape_protocols:
+            - PrometheusProto
+            - OpenMetricsText1.0.0
+            - OpenMetricsText0.0.1
+            - PrometheusText0.0.4
+        scrape_configs:
+          - job_name: kgateway-gateways
+            honor_labels: true
+            kubernetes_sd_configs:
+              - role: pod
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_gateway_networking_k8s_io_gateway_name]
+                regex: agentgateway
+                action: keep
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                regex: "true"
+                action: keep
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                regex: (.+)
+                target_label: __metrics_path__
+                action: replace
+              - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                separator: ":"
+                target_label: __address__
+                action: replace
+              - regex: __meta_kubernetes_pod_label_(.+)
+                action: labelmap
+              - source_labels: [__meta_kubernetes_namespace]
+                target_label: kube_namespace
+                action: replace
+              - source_labels: [__meta_kubernetes_pod_name]
+                target_label: pod
+                action: replace
+  exporters:
+    debug:
+      verbosity: detailed
+    prometheus:
+      endpoint: 0.0.0.0:9099
+    prometheusremotewrite/kube-prometheus-stack:
+      endpoint: http://kube-prometheus-stack-prometheus.telemetry.svc:9090/api/v1/write
+  service:
+    pipelines:
+      metrics:
+        receivers:
+          - prometheus/kgateway-dataplane
+          - prometheus/kgateway-controlplane
+        processors:
+          - batch
+        exporters:
+          - debug
+          - prometheusremotewrite/kube-prometheus-stack

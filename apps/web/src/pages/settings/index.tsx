@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { UserRole } from '@siesta/shared';
-import { useUsers, useSupportMcpStatus, useCacheStats, useOpenAiStatus } from '../../api/queries/settings';
+import { useUsers, useSupportMcpStatus, useCacheStats, useOpenAiStatus, useWarmupStatus } from '../../api/queries/settings';
 import { useUpdateUserRole, useDisconnectSupportMcp, useFlushCache } from '../../api/mutations/settings';
 import Badge from '../../components/common/badge';
 import RoleManager from '../../components/settings/role-manager';
@@ -33,16 +33,16 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-[#f9f9fb] dark:bg-[#0d0c12]">
       <div className="max-w-6xl mx-auto px-4 py-8">
-        <h1 className="font-display text-2xl font-bold text-[#191726] dark:text-[#f2f2f2] mb-6">Settings</h1>
+        <h1 className="font-display text-xl md:text-2xl font-bold text-[#191726] dark:text-[#f2f2f2] mb-4 md:mb-6">Settings</h1>
 
         {/* Tab Navigation */}
-        <div className="border-b border-[#dedde4] dark:border-[#2a2734] mb-6">
-          <nav className="-mb-px flex gap-6">
+        <div className="border-b border-[#dedde4] dark:border-[#2a2734] mb-4 md:mb-6">
+          <nav className="-mb-px flex gap-4 md:gap-6 overflow-x-auto scrollbar-hide">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-3 px-1 text-sm font-medium border-b-2 transition-colors ${
+                className={`py-3 px-1 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'border-[#6b26d9] text-[#6b26d9] dark:text-[#8249df]'
                     : 'border-transparent text-[#6b677e] dark:text-[#858198] hover:text-[#191726] dark:hover:text-[#f2f2f2] hover:border-[#dedde4] dark:hover:border-[#2a2734]'
@@ -264,6 +264,69 @@ function formatCpu(seconds: number): string {
   return `${minutes}m ${secs}s`;
 }
 
+function WarmupStatusCard() {
+  const { data: warmup } = useWarmupStatus();
+
+  if (!warmup || warmup.status === 'idle') return null;
+
+  const isWarming = warmup.status === 'warming';
+  const isComplete = warmup.status === 'complete';
+  const isError = warmup.status === 'error';
+  const progress = warmup.totalAccounts > 0
+    ? Math.round((warmup.processedAccounts / warmup.totalAccounts) * 100)
+    : 0;
+  const briefsProcessed = warmup.generated + warmup.skipped;
+
+  return (
+    <Card title="Gong Brief Warmup">
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span
+            className={`flex h-2.5 w-2.5 rounded-full ${
+              isWarming ? 'bg-amber-500 animate-pulse' : isComplete ? 'bg-green-500' : 'bg-red-500'
+            }`}
+          />
+          <span className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">
+            {isWarming ? 'Warming...' : isComplete ? 'Complete' : 'Error'}
+          </span>
+          {isWarming && (
+            <span className="text-xs text-[#6b677e] dark:text-[#858198]">
+              {warmup.processedAccounts} / {warmup.totalAccounts} accounts ({progress}%)
+            </span>
+          )}
+          {isComplete && warmup.completedAt && (
+            <span className="text-xs text-[#6b677e] dark:text-[#858198]">
+              finished {new Date(warmup.completedAt).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+
+        {isWarming && (
+          <div className="h-2 w-full rounded-full bg-[#eeedf3] dark:bg-[#1e1b29] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-amber-500 transition-all duration-500"
+              style={{ width: `${Math.max(progress, 2)}%` }}
+            />
+          </div>
+        )}
+
+        {isError && warmup.error && (
+          <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 px-4 py-3">
+            <p className="text-sm text-red-600 dark:text-red-400">{warmup.error}</p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-4">
+          <Metric label="Accounts" value={`${warmup.processedAccounts} / ${warmup.totalAccounts}`} />
+          <Metric label="Calls Found" value={warmup.totalCalls.toLocaleString()} />
+          <Metric label="Briefs Generated" value={warmup.generated.toLocaleString()} detail={isWarming && warmup.totalCalls > 0 ? `${warmup.totalCalls - briefsProcessed} remaining` : undefined} />
+          <Metric label="Skipped" value={warmup.skipped.toLocaleString()} detail="cache hits or errors" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function CacheTab() {
   const { data, isLoading } = useCacheStats();
   const flush = useFlushCache();
@@ -276,15 +339,10 @@ function CacheTab() {
     return <p className="text-sm text-[#6b677e] dark:text-[#858198]">Unable to load cache stats.</p>;
   }
 
-  const warmupVariant = {
-    idle: 'default' as const,
-    running: 'info' as const,
-    completed: 'success' as const,
-    failed: 'danger' as const,
-  };
-
   return (
     <div className="space-y-6">
+      <WarmupStatusCard />
+
       <Card>
         <div className="space-y-5">
           {/* Header row */}
@@ -309,22 +367,6 @@ function CacheTab() {
             >
               {flush.isPending ? 'Flushing...' : 'Flush Cache'}
             </button>
-          </div>
-
-          {/* Warmup status */}
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-[#6b677e] dark:text-[#858198]">Warmup</span>
-            <Badge variant={warmupVariant[data.warmup.status]}>{data.warmup.status}</Badge>
-            {data.warmup.completedAt && (
-              <span className="text-xs text-[#6b677e] dark:text-[#858198]">
-                {new Date(data.warmup.completedAt).toLocaleString()}
-                {data.warmup.durationMs != null && ` (${(data.warmup.durationMs / 1000).toFixed(1)}s)`}
-                {data.warmup.accountCount != null && ` \u00b7 ${data.warmup.accountCount} accounts`}
-              </span>
-            )}
-            {data.warmup.error && (
-              <span className="text-xs text-red-600 dark:text-red-400">{data.warmup.error}</span>
-            )}
           </div>
 
           {flush.isSuccess && (

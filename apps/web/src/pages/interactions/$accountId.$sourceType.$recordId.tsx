@@ -1,4 +1,4 @@
-import { useParams, Link } from '@tanstack/react-router';
+import { useParams, Link, useSearch } from '@tanstack/react-router';
 import { useInteractionDetail } from '../../api/queries/interactions';
 import { PageLoading } from '../../components/common/loading';
 import Card from '../../components/common/card';
@@ -6,11 +6,15 @@ import InteractionViewer from '../../components/interactions/interaction-viewer'
 
 export default function InteractionDetailPage() {
   const { accountId, sourceType, recordId } = useParams({ strict: false });
+  const search = useSearch({ strict: false }) as Record<string, string | undefined>;
+  const title = search?.title;
 
   const { data: interaction, isLoading, error } = useInteractionDetail(
     accountId,
     sourceType,
     recordId,
+    title,
+    { brief: sourceType === 'gong_call' },
   );
 
   if (isLoading) return <PageLoading />;

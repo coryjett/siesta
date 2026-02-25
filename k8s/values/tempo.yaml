@@ -1,0 +1,24 @@
+persistence:
+  enabled: false
+
+tempo:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+  metricsGenerator:
+    enabled: true
+    processor:
+      span_metrics:
+        enable_target_info: true
+      local_blocks:
+        flush_to_storage: false
+        max_live_traces: 10000
+    remoteWriteUrl: http://kube-prometheus-stack-prometheus.telemetry:9090/api/v1/write
+  overrides:
+    defaults:
+      metrics_generator:
+        processors:
+          - local-blocks
+          - span-metrics

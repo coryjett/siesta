@@ -117,6 +117,7 @@ export async function chatRoutes(app: FastifyInstance) {
         reply.raw.write(chunk);
       }
     } catch (err) {
+      request.log.error({ err }, 'Chat stream error');
       reply.raw.write(
         `data: ${JSON.stringify({ type: 'error', content: 'Internal server error' })}\n\n`,
       );

@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
 import type {
   Account,
@@ -42,6 +42,7 @@ export function useAccounts(filters: AccountFilters = {}) {
   return useQuery<Account[]>({
     queryKey: ['accounts', filters],
     queryFn: () => api.get<Account[]>(`/accounts${buildQueryString(filters as unknown as Record<string, unknown>)}`),
+    staleTime: 10 * 60 * 1000, // 10 min — matches server Redis TTL
   });
 }
 
@@ -50,6 +51,7 @@ export function useAccount(id: string | undefined) {
     queryKey: ['accounts', id],
     queryFn: () => api.get<AccountDetail>(`/accounts/${id}`),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 min — matches server Redis TTL
     retry: 1,
   });
 }
@@ -59,6 +61,7 @@ export function useAccountContacts(id: string | undefined) {
     queryKey: ['accounts', id, 'contacts'],
     queryFn: () => api.get<Contact[]>(`/accounts/${id}/contacts`),
     enabled: !!id,
+    staleTime: 10 * 60 * 1000, // 10 min — matches server Redis TTL
   });
 }
 
@@ -72,6 +75,7 @@ export function useAccountInteractions(id: string | undefined, filters: {
     queryKey: ['accounts', id, 'interactions', filters],
     queryFn: () => api.get<Interaction[]>(`/accounts/${id}/interactions${buildQueryString(filters)}`),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 min — matches server Redis TTL
     retry: 1,
   });
 }
@@ -81,6 +85,7 @@ export function useAccountOpportunities(id: string | undefined) {
     queryKey: ['accounts', id, 'opportunities'],
     queryFn: () => api.get<Opportunity[]>(`/accounts/${id}/opportunities`),
     enabled: !!id,
+    staleTime: 10 * 60 * 1000, // 10 min — matches server Redis TTL
   });
 }
 
@@ -89,6 +94,7 @@ export function useAccountIssues(id: string | undefined) {
     queryKey: ['accounts', id, 'issues'],
     queryFn: () => api.get<Issue[]>(`/accounts/${id}/issues`),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 min — matches server Redis TTL
   });
 }
 
@@ -97,6 +103,7 @@ export function useAccountTasks(id: string | undefined) {
     queryKey: ['accounts', id, 'tasks'],
     queryFn: () => api.get<Task[]>(`/accounts/${id}/tasks`),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 min — matches server Redis TTL
   });
 }
 
@@ -105,6 +112,7 @@ export function useAccountArchitecture(id: string | undefined) {
     queryKey: ['accounts', id, 'architecture'],
     queryFn: () => api.get<ArchitectureDoc>(`/accounts/${id}/architecture`),
     enabled: !!id,
+    staleTime: 15 * 60 * 1000, // 15 min — matches server Redis TTL
   });
 }
 
@@ -113,6 +121,7 @@ export function useAccountSentiment(id: string | undefined) {
     queryKey: ['accounts', id, 'sentiment'],
     queryFn: () => api.get<SentimentData>(`/accounts/${id}/sentiment`),
     enabled: !!id,
+    staleTime: 15 * 60 * 1000, // 15 min — matches server Redis TTL
     retry: 1,
   });
 }
@@ -131,7 +140,37 @@ export function useAccountOverview(id: string | undefined) {
   });
 }
 
+export interface TechnicalDetailsResponse {
+  details: string | null;
+}
+
+export function useAccountTechnicalDetails(id: string | undefined) {
+  return useQuery<TechnicalDetailsResponse>({
+    queryKey: ['accounts', id, 'technical-details'],
+    queryFn: () => api.get<TechnicalDetailsResponse>(`/accounts/${id}/technical-details`),
+    enabled: !!id,
+    staleTime: 60 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export interface POCSummaryResponse {
+  summary: string | null;
+  health: { rating: 'green' | 'yellow' | 'red'; reason: string } | null;
+}
+
+export function useAccountPOCSummary(id: string | undefined) {
+  return useQuery<POCSummaryResponse>({
+    queryKey: ['accounts', id, 'poc-summary'],
+    queryFn: () => api.get<POCSummaryResponse>(`/accounts/${id}/poc-summary`),
+    enabled: !!id,
+    staleTime: 60 * 60 * 1000,
+    retry: 1,
+  });
+}
+
 export interface ActionItem {
+  id: string;
   action: string;
   source: string;
   date: string;
@@ -150,6 +189,34 @@ export function useAccountActionItems(id: string | undefined) {
     enabled: !!id,
     staleTime: 60 * 60 * 1000,
     retry: 1,
+  });
+}
+
+export interface MeetingBriefResponse {
+  brief: string | null;
+}
+
+export function useMeetingBrief(accountId: string | undefined, title: string | undefined, date?: string) {
+  return useQuery<MeetingBriefResponse>({
+    queryKey: ['accounts', accountId, 'meeting-brief', title, date],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (title) params.set('title', title);
+      if (date) params.set('date', date);
+      return api.get<MeetingBriefResponse>(
+        `/accounts/${accountId}/meeting-brief?${params.toString()}`,
+      );
+    },
+    enabled: !!accountId && !!title,
+    staleTime: 60 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useWarmGongBriefs() {
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.post<{ status: string }>(`/accounts/${accountId}/warm-gong-briefs`, {}),
   });
 }
 
@@ -182,5 +249,29 @@ export function useEmailThreadSummary(
     enabled: !!accountId && emailIds.length > 0,
     staleTime: 24 * 60 * 60 * 1000, // 24 hours — matches server Redis TTL
     retry: 1,
+  });
+}
+
+export function useCompleteActionItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, hash }: { accountId: string; hash: string }) =>
+      api.post(`/accounts/${accountId}/action-items/${hash}/complete`),
+    onSuccess: (_data, { accountId }) => {
+      queryClient.invalidateQueries({ queryKey: ['accounts', accountId, 'action-items'] });
+      queryClient.invalidateQueries({ queryKey: ['home', 'my-action-items'] });
+    },
+  });
+}
+
+export function useUncompleteActionItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, hash }: { accountId: string; hash: string }) =>
+      api.delete(`/accounts/${accountId}/action-items/${hash}/complete`),
+    onSuccess: (_data, { accountId }) => {
+      queryClient.invalidateQueries({ queryKey: ['accounts', accountId, 'action-items'] });
+      queryClient.invalidateQueries({ queryKey: ['home', 'my-action-items'] });
+    },
   });
 }

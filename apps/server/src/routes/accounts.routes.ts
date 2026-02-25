@@ -12,7 +12,9 @@ import {
   getAccountSentiment,
 } from '../services/mcp-accounts.service.js';
 import { getInteractionDetail } from '../services/mcp-interactions.service.js';
-import { summarizeEmailThread, summarizeAccount, extractActionItems } from '../services/openai-summary.service.js';
+import { summarizeEmailThread, summarizeAccount, summarizeTechnicalDetails, generateGongCallBrief, summarizePOCs, generateMeetingBrief } from '../services/openai-summary.service.js';
+import { getActionItemsWithStatus, completeActionItem, uncompleteActionItem } from '../services/action-items.service.js';
+import { logger } from '../utils/logger.js';
 
 export async function accountsRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireAuth);
@@ -184,13 +186,125 @@ export async function accountsRoutes(app: FastifyInstance) {
 
   /**
    * GET /api/accounts/:id/action-items
-   * AI-extracted action items from recent calls and emails.
+   * AI-extracted action items from recent calls and emails, with completion status.
    */
   app.get<{ Params: { id: string } }>(
     '/api/accounts/:id/action-items',
     async (request, reply) => {
-      const items = await extractActionItems(request.params.id);
+      const items = await getActionItemsWithStatus(request.params.id, request.user.id);
       return reply.send({ items });
+    },
+  );
+
+  /**
+   * POST /api/accounts/:id/action-items/:hash/complete
+   * Mark an action item as completed.
+   */
+  app.post<{ Params: { id: string; hash: string } }>(
+    '/api/accounts/:id/action-items/:hash/complete',
+    async (request, reply) => {
+      await completeActionItem(request.params.id, request.params.hash, request.user.id);
+      return reply.status(204).send();
+    },
+  );
+
+  /**
+   * DELETE /api/accounts/:id/action-items/:hash/complete
+   * Unmark an action item completion.
+   */
+  app.delete<{ Params: { id: string; hash: string } }>(
+    '/api/accounts/:id/action-items/:hash/complete',
+    async (request, reply) => {
+      await uncompleteActionItem(request.params.hash, request.user.id);
+      return reply.status(204).send();
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/technical-details
+   * AI-generated technical details from calls, emails, and architecture docs.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/technical-details',
+    async (request, reply) => {
+      const details = await summarizeTechnicalDetails(request.params.id);
+      return reply.send({ details });
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/poc-summary
+   * AI-generated summary of ongoing POCs from Gong calls and opportunities.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/poc-summary',
+    async (request, reply) => {
+      const result = await summarizePOCs(request.params.id);
+      return reply.send(result ?? { summary: null, health: null });
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/meeting-brief
+   * AI-generated meeting prep brief for an upcoming meeting.
+   */
+  app.get<{ Params: { id: string }; Querystring: { title?: string; date?: string } }>(
+    '/api/accounts/:id/meeting-brief',
+    async (request, reply) => {
+      const { title, date } = request.query;
+      if (!title) {
+        return reply.status(400).send({ error: 'title query parameter is required' });
+      }
+      const brief = await generateMeetingBrief(request.params.id, title, date);
+      return reply.send({ brief });
+    },
+  );
+
+  /**
+   * POST /api/accounts/:id/warm-gong-briefs
+   * Pre-generate Gong call briefs for all calls on an account.
+   * Returns immediately; brief generation happens in the background.
+   */
+  app.post<{ Params: { id: string } }>(
+    '/api/accounts/:id/warm-gong-briefs',
+    async (request, reply) => {
+      const accountId = request.params.id;
+
+      // Fire and forget — don't block the response
+      (async () => {
+        try {
+          const interactions = (await getAccountInteractions(accountId, {
+            sourceTypes: ['gong_call'],
+          })) as Array<Record<string, unknown>>;
+
+          const titles = [...new Set(
+            interactions
+              .map((i) => String(i.title ?? ''))
+              .filter((t) => t.length > 0),
+          )];
+
+          logger.info(
+            { accountId, callCount: titles.length },
+            '[warm-gong-briefs] Starting brief generation',
+          );
+
+          // Process sequentially to avoid hammering OpenAI
+          for (const title of titles) {
+            await generateGongCallBrief(accountId, title).catch((err) =>
+              logger.warn({ accountId, title, err: (err as Error).message }, '[warm-gong-briefs] Failed'),
+            );
+          }
+
+          logger.info(
+            { accountId, callCount: titles.length },
+            '[warm-gong-briefs] Complete',
+          );
+        } catch (err) {
+          logger.warn({ accountId, err: (err as Error).message }, '[warm-gong-briefs] Failed to warm briefs');
+        }
+      })();
+
+      return reply.status(202).send({ status: 'warming' });
     },
   );
 

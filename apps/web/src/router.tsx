@@ -41,10 +41,28 @@ const accountDetailRoute = createRoute({
   component: lazyRouteComponent(() => import('./pages/accounts/$accountId')),
 });
 
-const searchRoute = createRoute({
+const accountSummaryRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: '/search',
-  component: lazyRouteComponent(() => import('./pages/search/index')),
+  path: '/accounts/$accountId/summary',
+  component: lazyRouteComponent(
+    () => import('./pages/accounts/$accountId.summary'),
+  ),
+});
+
+const accountPOCStatusRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/accounts/$accountId/poc-status',
+  component: lazyRouteComponent(
+    () => import('./pages/accounts/$accountId.poc-status'),
+  ),
+});
+
+const accountTechnicalDetailsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/accounts/$accountId/technical-details',
+  component: lazyRouteComponent(
+    () => import('./pages/accounts/$accountId.technical-details'),
+  ),
 });
 
 const interactionDetailRoute = createRoute({
@@ -55,11 +73,27 @@ const interactionDetailRoute = createRoute({
   ),
 });
 
+const opportunitiesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/opportunities',
+  component: lazyRouteComponent(
+    () => import('./pages/opportunities/index'),
+  ),
+});
+
 const opportunityDetailRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/opportunities/$opportunityId',
   component: lazyRouteComponent(
     () => import('./pages/opportunities/$opportunityId'),
+  ),
+});
+
+const meetingBriefRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/meetings/brief/$accountId',
+  component: lazyRouteComponent(
+    () => import('./pages/meetings/brief'),
   ),
 });
 
@@ -75,9 +109,13 @@ const routeTree = rootRoute.addChildren([
     homeRoute,
     accountsRoute,
     accountDetailRoute,
-    searchRoute,
+    accountSummaryRoute,
+    accountPOCStatusRoute,
+    accountTechnicalDetailsRoute,
     interactionDetailRoute,
+    opportunitiesRoute,
     opportunityDetailRoute,
+    meetingBriefRoute,
     settingsRoute,
   ]),
 ]);

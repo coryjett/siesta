@@ -4,7 +4,7 @@ import { getAllSettings, setSetting } from '../services/settings.service.js';
 import { BadRequestError } from '../utils/errors.js';
 import { callTool, resetSession } from '../integrations/mcp/client.js';
 import { getRedisClient, isRedisAvailable } from '../services/cache.service.js';
-import { getWarmupState } from '../services/cache-warmup.service.js';
+import { getWarmupStatus } from '../services/openai-summary.service.js';
 import { env } from '../config/env.js';
 
 export async function settingsRoutes(app: FastifyInstance) {
@@ -86,7 +86,7 @@ export async function settingsRoutes(app: FastifyInstance) {
 
   /**
    * GET /api/settings/cache/stats
-   * Get Redis cache statistics, warmup state, and performance metrics.
+   * Get Redis cache statistics and performance metrics.
    */
   app.get('/api/settings/cache/stats', async (_request, reply) => {
     const client = getRedisClient();
@@ -95,7 +95,6 @@ export async function settingsRoutes(app: FastifyInstance) {
     if (!connected || !client) {
       return reply.send({
         connected: false,
-        warmup: getWarmupState(),
         server: null,
         memory: null,
         stats: null,
@@ -147,7 +146,6 @@ export async function settingsRoutes(app: FastifyInstance) {
 
       return reply.send({
         connected: true,
-        warmup: getWarmupState(),
         server: {
           redisVersion: parse(info, 'redis_version'),
           uptimeSeconds: parseInt(parse(info, 'uptime_in_seconds')) || 0,
@@ -187,7 +185,6 @@ export async function settingsRoutes(app: FastifyInstance) {
     } catch {
       return reply.send({
         connected: false,
-        warmup: getWarmupState(),
         server: null,
         memory: null,
         stats: null,
@@ -197,9 +194,9 @@ export async function settingsRoutes(app: FastifyInstance) {
 
   /**
    * POST /api/settings/cache/flush
-   * Flush the Redis cache. (admin only)
+   * Flush the Redis cache.
    */
-  app.post('/api/settings/cache/flush', adminOnly, async (_request, reply) => {
+  app.post('/api/settings/cache/flush', async (_request, reply) => {
     const client = getRedisClient();
 
     if (!client || !isRedisAvailable()) {
@@ -212,6 +209,14 @@ export async function settingsRoutes(app: FastifyInstance) {
     } catch (err) {
       return reply.status(500).send({ success: false, error: (err as Error).message });
     }
+  });
+
+  /**
+   * GET /api/settings/cache/warmup-status
+   * Get the current Gong brief warmup status.
+   */
+  app.get('/api/settings/cache/warmup-status', async (_request, reply) => {
+    return reply.send(getWarmupStatus());
   });
 
   /**

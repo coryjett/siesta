@@ -6,9 +6,11 @@ metadata:
 data:
   NODE_ENV: production
   PORT: "3000"
-  REDIS_URL: redis://redis:6379
+  REDIS_URL: redis://agentgateway.siesta.svc.cluster.local:6379
   APP_URL: https://siesta.cjett.net
   API_URL: https://siesta.cjett.net
   COOKIE_SECURE: "true"
   MCP_SERVER_URL: http://agentgateway.siesta.svc.cluster.local:3001/mcp
   OPENAI_BASE_URL: http://agentgateway.siesta.svc.cluster.local:3001/v1
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://opentelemetry-collector-traces.telemetry.svc.cluster.local:4317
+  OTEL_SERVICE_NAME: siesta

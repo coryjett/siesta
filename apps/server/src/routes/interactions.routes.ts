@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../auth/guards.js';
 import { getInteractionDetail } from '../services/mcp-interactions.service.js';
+import { generateGongCallBrief } from '../services/openai-summary.service.js';
 import { searchPortfolio, getNegativeInteractions } from '../services/mcp-search.service.js';
 
 export async function interactionsRoutes(app: FastifyInstance) {
@@ -59,11 +60,22 @@ export async function interactionsRoutes(app: FastifyInstance) {
    */
   app.get<{
     Params: { accountId: string; sourceType: string; recordId: string };
+    Querystring: { title?: string; brief?: string };
   }>(
     '/api/interactions/:accountId/:sourceType/:recordId',
     async (request, reply) => {
       const { accountId, sourceType, recordId } = request.params;
-      const detail = await getInteractionDetail(accountId, sourceType, recordId);
+      const { title, brief } = request.query;
+      const detail = await getInteractionDetail(accountId, sourceType, recordId, title);
+
+      // For gong_calls with brief=true, synthesize a full call brief via OpenAI
+      if (brief === 'true' && sourceType === 'gong_call' && title) {
+        const fullBrief = await generateGongCallBrief(accountId, title);
+        if (fullBrief) {
+          return reply.send({ ...detail, content: fullBrief });
+        }
+      }
+
       return reply.send(detail);
     },
   );

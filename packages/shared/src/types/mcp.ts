@@ -84,6 +84,11 @@ export interface Opportunity {
   isWon: boolean;
 }
 
+export interface OpportunityWithAccount extends Opportunity {
+  accountId: string;
+  accountName: string;
+}
+
 // ── Issue types ──
 
 export interface Issue {

@@ -17,7 +17,7 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error: ApiError = await response.json().catch(() => ({
+      const body: ApiError = await response.json().catch(() => ({
         statusCode: response.status,
         error: response.statusText,
         message: 'An unexpected error occurred',
@@ -27,7 +27,9 @@ class ApiClient {
         window.location.href = '/login';
       }
 
-      throw error;
+      const err = new Error(body.message ?? 'An unexpected error occurred');
+      Object.assign(err, body);
+      throw err;
     }
 
     if (response.status === 204) {

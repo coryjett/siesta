@@ -74,7 +74,7 @@ export default function NoteList({ accountId, opportunityId }: NoteListProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notes</h3>
-        {!showForm && !editingNote && (
+        {!showForm && !editingNote && data && data.data.length > 0 && (
           <button
             type="button"
             onClick={() => setShowForm(true)}

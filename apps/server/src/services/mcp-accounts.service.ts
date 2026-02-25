@@ -122,11 +122,53 @@ export async function getAccount(id: string) {
   });
 }
 
+/**
+ * Derive a display name from an email address.
+ * e.g. "john.doe@example.com" → "John Doe"
+ */
+function nameFromEmail(email: string): string {
+  const local = email.split('@')[0];
+  return local
+    .split(/[._-]/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function mapContact(raw: Record<string, unknown>) {
+  const email = (raw.email ?? raw.email_address ?? raw.emailAddress ?? null) as string | null;
+  const rawName = (raw.name ?? raw.full_name ?? raw.fullName ?? raw.contact_name ?? raw.contactName ?? null) as string | null;
+  const name = rawName || (email ? nameFromEmail(email) : null);
+
+  return {
+    id: raw.id ?? raw.contact_id ?? raw.contactId ?? '',
+    name,
+    email,
+    title: raw.title ?? raw.job_title ?? raw.jobTitle ?? raw.role ?? null,
+    phone: raw.phone ?? raw.phone_number ?? raw.phoneNumber ?? null,
+    gongCallCount: raw.gongCallCount ?? raw.gong_call_count ?? raw.callCount ?? raw.call_count ?? 0,
+    emailCount: raw.emailCount ?? raw.email_count ?? 0,
+    lastInteractionDate: raw.lastInteractionDate ?? raw.last_interaction_date ?? raw.lastActivityDate ?? raw.last_activity_date ?? null,
+  };
+}
+
 export async function getAccountContacts(id: string) {
   return cachedCall(`mcp:account:${id}:contacts`, 600, async () => {
     const result = await callTool<unknown>('get_contacts', { company_id: id });
-    return unwrapArray(result);
+    const contacts = unwrapArray<Record<string, unknown>>(result);
+    return contacts.map(mapContact);
   });
+}
+
+function mapInteraction(raw: Record<string, unknown>) {
+  return {
+    id: raw.id ?? '',
+    sourceType: raw.sourceType ?? raw.source_type ?? '',
+    date: raw.date ?? '',
+    title: raw.title ?? '',
+    preview: raw.preview ?? null,
+    sentiment: raw.sentiment ?? null,
+    participants: raw.participants ?? [],
+  };
 }
 
 export async function getAccountInteractions(id: string, filters: {
@@ -144,7 +186,8 @@ export async function getAccountInteractions(id: string, filters: {
   const hash = hashFilters(filters as unknown as Record<string, unknown>);
   return cachedCall(`mcp:account:${id}:interactions:${hash}`, 300, async () => {
     const result = await callTool<unknown>('get_recent_activity', args);
-    return unwrapArray(result);
+    const interactions = unwrapArray<Record<string, unknown>>(result);
+    return interactions.map(mapInteraction);
   });
 }
 

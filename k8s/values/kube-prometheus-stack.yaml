@@ -1,0 +1,94 @@
+alertmanager:
+  enabled: false
+
+coreDns:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: false
+
+prometheusNodeExporter:
+  enabled: false
+
+prometheus-node-exporter:
+  enabled: false
+
+kube-state-metrics:
+  affinity: {}
+  nodeSelector: {}
+
+prometheus:
+  prometheusSpec:
+    affinity: {}
+    nodeSelector: {}
+    enableFeatures:
+      - native-histograms
+    enableRemoteWriteReceiver: true
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+prometheusOperator:
+  admissionWebhooks:
+    patch:
+      affinity: {}
+      nodeSelector: {}
+  affinity: {}
+  nodeSelector: {}
+
+grafana:
+  enabled: true
+  # adminPassword set via --set in deploy-telemetry.sh (GRAFANA_ADMIN_PASSWORD env var)
+  affinity: {}
+  nodeSelector: {}
+  defaultDashboardsEnabled: true
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          url: http://kube-prometheus-stack-prometheus.telemetry:9090
+          access: proxy
+          orgId: 1
+          basicAuth: false
+          editable: true
+          jsonData:
+            httpMethod: GET
+            exemplarTraceIdDestinations:
+              - name: trace_id
+                datasourceUid: tempo
+        - name: Tempo
+          type: tempo
+          uid: tempo
+          url: http://tempo.telemetry.svc.cluster.local:3200
+          access: proxy
+          orgId: 1
+          basicAuth: false
+          editable: true
+          isDefault: false
+        - name: Loki
+          type: loki
+          typeName: Loki
+          url: http://loki.telemetry.svc.cluster.local:3100
+          access: proxy
+          orgId: 1
+          basicAuth: false
+          editable: true
+          isDefault: false

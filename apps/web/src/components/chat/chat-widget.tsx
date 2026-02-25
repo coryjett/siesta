@@ -116,7 +116,7 @@ export default function ChatWidget() {
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Animation state
-  const [currentAnim, setCurrentAnim] = useState(ANIMATIONS[0]);
+  const [currentAnim, setCurrentAnim] = useState<(typeof ANIMATIONS)[number]>(ANIMATIONS[0]);
   const [animating, setAnimating] = useState(false);
   const [visible, setVisible] = useState(false);
 
@@ -193,7 +193,7 @@ export default function ChatWidget() {
   }, []);
 
   // Save chat history to Redis whenever messages change (debounced)
-  const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     if (messages.length === 0) return;
     // Don't save while streaming

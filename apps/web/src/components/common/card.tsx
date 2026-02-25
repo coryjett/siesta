@@ -3,6 +3,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
 
 interface CardProps {
   title?: ReactNode;
+  headerRight?: ReactNode;
   children: ReactNode;
   className?: string;
   dragHandleProps?: HTMLAttributes<HTMLButtonElement>;
@@ -10,6 +11,7 @@ interface CardProps {
 
 export default function Card({
   title,
+  headerRight,
   children,
   className,
   dragHandleProps,
@@ -47,6 +49,7 @@ export default function Card({
             </button>
           )}
           <h3 className="font-display text-lg font-semibold text-[#191726] dark:text-[#f2f2f2]">{title}</h3>
+          {headerRight && <div className="ml-auto">{headerRight}</div>}
         </div>
       )}
       {children}

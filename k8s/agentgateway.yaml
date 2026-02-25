@@ -34,6 +34,24 @@ spec:
     allowedRoutes:
       namespaces:
         from: Same
+  - name: postgres
+    port: 5432
+    protocol: TCP
+    allowedRoutes:
+      namespaces:
+        from: Same
+      kinds:
+      - kind: TCPRoute
+        group: gateway.networking.k8s.io
+  - name: redis
+    port: 6379
+    protocol: TCP
+    allowedRoutes:
+      namespaces:
+        from: Same
+      kinds:
+      - kind: TCPRoute
+        group: gateway.networking.k8s.io
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -98,13 +116,13 @@ metadata:
   name: openai
   namespace: siesta
 spec:
-  llm:
-    targets:
-    - name: openai
-      static:
+  ai:
+    groups:
+    - providers:
+      - name: openai
+        openai: {}
         host: api.openai.com
         port: 443
-        protocol: HTTPS
         policies:
           auth:
             passthrough: {}
@@ -128,6 +146,34 @@ spec:
     - group: agentgateway.dev
       kind: AgentgatewayBackend
       name: openai
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: postgres
+  namespace: siesta
+spec:
+  parentRefs:
+  - name: agentgateway
+    sectionName: postgres
+  rules:
+  - backendRefs:
+    - name: postgres-cnpg-rw
+      port: 5432
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: redis
+  namespace: siesta
+spec:
+  parentRefs:
+  - name: agentgateway
+    sectionName: redis
+  rules:
+  - backendRefs:
+    - name: redis
+      port: 6379
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy

@@ -22,4 +22,4 @@ RUN npm ci --omit=dev --workspace=apps/server --workspace=packages/shared && \
     npm install --no-save tsx
 
 EXPOSE 3000
-CMD ["node", "--import", "tsx/esm", "apps/server/dist/index.js"]
+CMD ["node", "--import", "tsx/esm", "--import", "./apps/server/dist/instrumentation.js", "apps/server/dist/index.js"]

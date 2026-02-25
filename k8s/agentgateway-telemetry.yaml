@@ -1,0 +1,31 @@
+# AgentgatewayParameters: rawConfig tracing export to OTEL collector
+# The AgentgatewayPolicy backendRef approach does not resolve ExternalName
+# services, so we use rawConfig to set the OTLP endpoint directly.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: siesta-agw-params
+  namespace: siesta
+spec:
+  rawConfig:
+    config:
+      tracing:
+        otlpEndpoint: http://opentelemetry-collector-traces.telemetry.svc.cluster.local:4317
+        randomSampling: true
+---
+# PodMonitor: scrape AGW proxy metrics for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: agentgateway-proxy
+  namespace: siesta
+  labels:
+    release: kube-prometheus-stack
+spec:
+  podMetricsEndpoints:
+  - interval: 15s
+    path: /metrics
+    port: metrics
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: agentgateway

@@ -1,0 +1,91 @@
+mode: daemonset
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+command:
+  name: otelcol-contrib
+
+clusterRole:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: [pods, namespaces, nodes]
+      verbs: [get, list, watch]
+
+extraVolumes:
+  - name: varlog
+    hostPath:
+      path: /var/log
+
+extraVolumeMounts:
+  - name: varlog
+    mountPath: /var/log
+    readOnly: true
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    filelog:
+      include:
+        - /var/log/containers/*.log
+      exclude:
+        - /var/log/containers/*opentelemetry-collector*.log
+      include_file_name: false
+      include_file_path: true
+      start_at: beginning
+      operators:
+        - type: router
+          id: get-format
+          routes:
+            - output: parser-docker
+              expr: body matches "^\\{"
+            - output: parser-containerd
+              expr: body matches "^[^ Z]+Z"
+        - type: json_parser
+          id: parser-docker
+          output: extract-metadata
+        - type: regex_parser
+          id: parser-containerd
+          regex: ^(?P<time>[^ Z]+Z) (?P<stream>stdout|stderr) (?P<logtag>[^ ]*) ?(?P<log>.*)$
+          output: extract-metadata
+          timestamp:
+            parse_from: attributes.time
+            layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+        - type: regex_parser
+          id: extract-metadata
+          parse_from: attributes["log.file.path"]
+          regex: ^.*\/(?P<namespace>[^_]+)_(?P<pod>[^_]+)_(?P<uid>[^\/]+)\/(?P<container>[^\/]+)\/
+          cache:
+            size: 128
+        - type: move
+          from: attributes.namespace
+          to: resource["k8s.namespace.name"]
+        - type: move
+          from: attributes.pod
+          to: resource["k8s.pod.name"]
+        - type: move
+          from: attributes.container
+          to: resource["k8s.container.name"]
+  exporters:
+    debug:
+      verbosity: basic
+    otlphttp/loki:
+      endpoint: http://loki.telemetry.svc.cluster.local:3100/otlp
+      tls:
+        insecure: true
+  service:
+    pipelines:
+      logs:
+        receivers:
+          - filelog
+          - otlp
+        processors:
+          - batch
+        exporters:
+          - otlphttp/loki

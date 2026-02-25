@@ -60,7 +60,12 @@ export async function cachedCall<T>(key: string, ttlSeconds: number, fn: () => P
 
   if (client && redisAvailable) {
     try {
-      await client.set(key, JSON.stringify(result), 'EX', ttlSeconds);
+      if (ttlSeconds > 0) {
+        await client.set(key, JSON.stringify(result), 'EX', ttlSeconds);
+      } else {
+        // ttlSeconds === 0 means cache indefinitely (no expiry)
+        await client.set(key, JSON.stringify(result));
+      }
     } catch {
       // Redis write failed, result still returned
     }
@@ -84,6 +89,37 @@ export function getRedisClient(): Redis | null {
  */
 export function isRedisAvailable(): boolean {
   return redisAvailable;
+}
+
+/**
+ * Read a cached value by key. Returns null if not found or Redis unavailable.
+ */
+export async function getCache<T>(key: string): Promise<T | null> {
+  const client = getRedis();
+  if (!client || !redisAvailable) return null;
+  try {
+    const cached = await client.get(key);
+    return cached ? (JSON.parse(cached) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write a value to cache with a TTL. Use ttlSeconds=0 for no expiry.
+ */
+export async function setCache<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
+  const client = getRedis();
+  if (!client || !redisAvailable) return;
+  try {
+    if (ttlSeconds > 0) {
+      await client.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+    } else {
+      await client.set(key, JSON.stringify(value));
+    }
+  } catch {
+    // Redis write failed, ignore
+  }
 }
 
 export async function invalidateCache(pattern: string): Promise<void> {

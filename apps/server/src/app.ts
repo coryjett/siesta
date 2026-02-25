@@ -24,6 +24,7 @@ import { chatRoutes } from './routes/chat.routes.js';
 export async function buildApp() {
   const app = Fastify({
     loggerInstance: logger,
+    trustProxy: true,
   });
 
   await app.register(cors, {
@@ -35,11 +36,12 @@ export async function buildApp() {
     secret: env.SESSION_SECRET,
   });
 
-  // Rate limiting
+  // Rate limiting — trustProxy makes request.ip use X-Forwarded-For
   await app.register(rateLimit, {
-    max: 100,
+    max: 200,
     timeWindow: '1 minute',
     keyGenerator: (request) => request.ip,
+    allowList: (request) => request.url === '/health',
   });
 
   // CSP headers

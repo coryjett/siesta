@@ -80,6 +80,15 @@
   box-shadow: 0 0 8px rgba(130, 73, 223, 0.3), 0 0 16px rgba(130, 73, 223, 0.1);
 }
 
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Base body styles */
 body {
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;

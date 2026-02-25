@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,10 +8,15 @@ import {
   useAccountOverview,
   useAccountActionItems,
   useAccountContacts,
-  useAccountArchitecture,
+  useAccountTechnicalDetails,
   useEmailThreadSummary,
+  useWarmGongBriefs,
+  useAccountPOCSummary,
+  useCompleteActionItem,
+  useUncompleteActionItem,
 } from '../../api/queries/accounts';
 import type { ActionItem } from '../../api/queries/accounts';
+import { useAuth } from '../../contexts/auth-context';
 import { useInteractionDetail } from '../../api/queries/interactions';
 import { PageLoading } from '../../components/common/loading';
 import Card from '../../components/common/card';
@@ -239,17 +244,11 @@ function EmailThreadSection({
   const visible = expanded ? threads : threads.slice(0, PREVIEW_COUNT);
 
   return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          Emails
-          {!error && !isLoading && (
-            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
-              ({threads.length} thread{threads.length !== 1 ? 's' : ''})
-            </span>
-          )}
-        </span>
-      }
+    <CollapsibleSection
+      title="Emails"
+      count={threads.length}
+      isLoading={isLoading}
+      error={error}
     >
       {error ? (
         <SectionError message="Failed to load emails." />
@@ -281,7 +280,7 @@ function EmailThreadSection({
           )}
         </>
       )}
-    </Card>
+    </CollapsibleSection>
   );
 }
 
@@ -342,37 +341,183 @@ function parseSummary(text: string): SummarySection[] {
   return sections;
 }
 
-function AccountSummaryContent({ overview }: { overview: string }) {
-  const sections = useMemo(() => parseSummary(overview), [overview]);
-
-  if (sections.length === 0) {
-    return (
-      <p className="text-sm text-gray-700 dark:text-gray-300">{overview}</p>
-    );
-  }
+function AccountSummarySection({
+  overview,
+  isLoading,
+  error,
+  accountId,
+}: {
+  overview: { overview: string | null } | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  accountId: string;
+}) {
+  const navigate = useNavigate();
+  const preview = useMemo(() => {
+    if (!overview?.overview) return [];
+    const sections = parseSummary(overview.overview);
+    // Show first 3 sections, first bullet each
+    return sections.slice(0, 3).map((s) => ({
+      heading: s.heading,
+      bullet: s.bullets[0] ?? '',
+    }));
+  }, [overview]);
 
   return (
-    <div className="space-y-4">
-      {sections.map((section, i) => (
-        <div key={i}>
-          {section.heading && (
-            <p className="text-base font-semibold text-[#191726] dark:text-[#f2f2f2] mb-1.5">
-              {section.heading}
-            </p>
-          )}
-          {section.bullets.length > 0 && (
-            <ul className="space-y-1 ml-1">
-              {section.bullets.map((bullet, j) => (
-                <li key={j} className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6b26d9]/60 dark:bg-[#8249df]/60" />
-                  <span>{bullet}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+    <Card title="Account Summary">
+      {error ? (
+        <SectionError message="Failed to load account overview." />
+      ) : isLoading ? (
+        <div className="flex items-center gap-3">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#6b26d9] border-t-transparent dark:border-[#8249df]" />
+          <p className="text-sm text-[#6b677e] dark:text-[#858198]">
+            Generating account overview...
+          </p>
         </div>
-      ))}
+      ) : preview.length > 0 ? (
+        <div className="space-y-3">
+          {preview.map((s, i) => (
+            <div key={i}>
+              {s.heading && (
+                <p className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2] mb-0.5">
+                  {s.heading}
+                </p>
+              )}
+              {s.bullet && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                  {s.bullet}
+                </p>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                to: '/accounts/$accountId/summary',
+                params: { accountId },
+              })
+            }
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline"
+          >
+            View full summary
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14" />
+              <path d="M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-[#6b677e] dark:text-[#858198]">No overview available.</p>
+      )}
+    </Card>
+  );
+}
+
+function POCHealthBadge({ health }: { health: { rating: 'green' | 'yellow' | 'red'; reason: string } }) {
+  const config = {
+    green: { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20', label: 'Healthy' },
+    yellow: { dot: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20', label: 'Caution' },
+    red: { dot: 'bg-red-500', text: 'text-red-700 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20', label: 'At Risk' },
+  }[health.rating];
+
+  return (
+    <div className="relative group">
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${config.bg} ${config.text}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} />
+        {config.label}
+      </span>
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
+        <div className="rounded-lg bg-gray-900 dark:bg-gray-700 px-3 py-2 text-xs text-white shadow-lg max-w-60 text-center whitespace-normal">
+          {health.reason}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700" />
+        </div>
+      </div>
     </div>
+  );
+}
+
+function POCHealthDot({ health }: { health: { rating: 'green' | 'yellow' | 'red'; reason: string } }) {
+  const color = { green: 'bg-emerald-500', yellow: 'bg-amber-500', red: 'bg-red-500' }[health.rating];
+  const label = { green: 'Healthy', yellow: 'Caution', red: 'At Risk' }[health.rating];
+
+  return (
+    <span className="relative group shrink-0" title={`${label}: ${health.reason}`}>
+      <span className={`inline-block h-3 w-3 rounded-full ${color} shadow-sm`} />
+    </span>
+  );
+}
+
+function POCStatusSection({
+  pocData,
+  isLoading,
+  error,
+  accountId,
+}: {
+  pocData: { summary: string | null; health: { rating: 'green' | 'yellow' | 'red'; reason: string } | null } | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  accountId: string;
+}) {
+  const navigate = useNavigate();
+  const preview = useMemo(() => {
+    if (!pocData?.summary) return [];
+    const sections = parseSummary(pocData.summary);
+    return sections.slice(0, 3).map((s) => ({
+      heading: s.heading,
+      bullet: s.bullets[0] ?? '',
+    }));
+  }, [pocData]);
+
+  return (
+    <Card
+      title="POC Status"
+      headerRight={pocData?.health ? <POCHealthBadge health={pocData.health} /> : undefined}
+    >
+      {error ? (
+        <SectionError message="Failed to load POC summary." />
+      ) : isLoading ? (
+        <div className="flex items-center gap-3">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#6b26d9] border-t-transparent dark:border-[#8249df]" />
+          <p className="text-sm text-[#6b677e] dark:text-[#858198]">
+            Analyzing POC activity...
+          </p>
+        </div>
+      ) : preview.length > 0 ? (
+        <div className="space-y-3">
+          {preview.map((s, i) => (
+            <div key={i}>
+              {s.heading && (
+                <p className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2] mb-0.5">
+                  {s.heading}
+                </p>
+              )}
+              {s.bullet && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                  {s.bullet}
+                </p>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                to: '/accounts/$accountId/poc-status',
+                params: { accountId },
+              })
+            }
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline"
+          >
+            View full POC details
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14" />
+              <path d="M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
+    </Card>
   );
 }
 
@@ -384,6 +529,26 @@ function SectionError({ message }: { message: string }) {
   );
 }
 
+/**
+ * Truncate a summary string to roughly `maxLen` characters,
+ * breaking at the last whitespace before the limit.
+ */
+/**
+ * Extract just the summary paragraph from a Gong call brief.
+ * The brief typically starts with "Summary:\n..." followed by
+ * sections like "Key Highlights:", "Action Items:", etc.
+ */
+function extractSummaryParagraph(content: string): string {
+  // Strip "Summary:" / "Summary:\n" prefix
+  let text = content.replace(/^summary:?\s*/i, '').trim();
+  // Stop before the first section header (Key Highlights, Action Items, Next Steps, etc.)
+  const sectionMatch = text.search(/\n\s*(?:key highlights|action items|next steps|key points|follow[- ]?up|outcomes|decisions)[\s:]/i);
+  if (sectionMatch > 0) {
+    text = text.slice(0, sectionMatch).trim();
+  }
+  return text;
+}
+
 function CallItem({
   call,
   accountId,
@@ -391,23 +556,40 @@ function CallItem({
   call: Interaction;
   accountId: string;
 }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const { data: detail, isLoading } = useInteractionDetail(
     open ? accountId : undefined,
     open ? call.sourceType : undefined,
     open ? call.id : undefined,
+    call.title,
   );
 
-  // Check if the detail content is an MCP error
-  const detailContent = (() => {
-    if (!detail?.content) return null;
-    const lower = detail.content.toLowerCase();
-    if (lower.includes('no rows in result set') || lower.includes('not found')) return null;
-    return detail.content;
-  })();
+  // Check if the detail content is an MCP error (short error string, not real content)
+  const isMcpError = (text: string | null | undefined): boolean => {
+    if (!text) return true;
+    if (text.length > 200) return false;
+    const lower = text.toLowerCase().trim();
+    return lower.includes('no rows in result set') || lower === 'not found' || lower.startsWith('error:');
+  };
 
-  const summary = detail?.summary ?? detailContent ?? call.preview;
+  const hasFullContent = !isMcpError(detail?.content);
+  // Inline expand: show just the summary paragraph
+  const inlineSummary = hasFullContent
+    ? extractSummaryParagraph(detail!.content)
+    : (detail?.summary ?? call.preview ?? '');
   const participants = detail?.participants ?? [];
+
+  const goToDetail = () =>
+    navigate({
+      to: '/interactions/$accountId/$sourceType/$recordId',
+      params: {
+        accountId,
+        sourceType: call.sourceType,
+        recordId: call.id,
+      },
+      search: { title: call.title },
+    });
 
   return (
     <li>
@@ -460,7 +642,7 @@ function CallItem({
                 <div className="h-3 w-3 animate-spin rounded-full border-2 border-[#6b26d9] border-t-transparent dark:border-[#8249df]" />
                 <p className="text-xs text-[#6b677e] dark:text-[#858198]">Loading call summary...</p>
               </div>
-            ) : summary ? (
+            ) : inlineSummary ? (
               <div className="space-y-3">
                 {participants.length > 0 && (
                   <div className="space-y-1">
@@ -475,8 +657,21 @@ function CallItem({
                   </div>
                 )}
                 <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                  {summary}
+                  {inlineSummary}
                 </div>
+                {hasFullContent && (
+                  <button
+                    type="button"
+                    onClick={goToDetail}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline"
+                  >
+                    View full call brief
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14" />
+                      <path d="M12 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
               </div>
             ) : (
               <p className="text-xs text-[#6b677e] dark:text-[#858198]">
@@ -487,6 +682,62 @@ function CallItem({
         )}
       </div>
     </li>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  count,
+  isLoading,
+  error,
+  defaultCollapsed = true,
+  children,
+}: {
+  title: string;
+  count: number;
+  isLoading: boolean;
+  error: Error | null;
+  defaultCollapsed?: boolean;
+  children: React.ReactNode;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  return (
+    <div className="bg-white dark:bg-[#14131b] rounded-xl shadow-sm border border-[#dedde4] dark:border-[#2a2734]">
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="w-full flex items-center justify-between gap-2 px-4 md:px-6 py-3 md:py-4 text-left hover:bg-gray-50/50 dark:hover:bg-[#1e1c27]/50 transition-colors rounded-xl"
+      >
+        <h3 className="font-display text-base md:text-lg font-semibold text-[#191726] dark:text-[#f2f2f2] flex items-center gap-2">
+          {title}
+          {!error && !isLoading && (
+            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
+              ({count})
+            </span>
+          )}
+        </h3>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`shrink-0 text-[#6b677e] dark:text-[#858198] transition-transform ${collapsed ? '' : 'rotate-180'}`}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {!collapsed && (
+        <div className="px-4 md:px-6 pb-4 md:pb-6">
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -507,17 +758,11 @@ function CallSection({
   const visible = expanded ? allCalls : allCalls.slice(0, PREVIEW_COUNT);
 
   return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          Calls
-          {!error && !isLoading && (
-            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
-              ({allCalls.length})
-            </span>
-          )}
-        </span>
-      }
+    <CollapsibleSection
+      title="Calls"
+      count={allCalls.length}
+      isLoading={isLoading}
+      error={error}
     >
       {error ? (
         <SectionError message="Failed to load calls." />
@@ -543,7 +788,7 @@ function CallSection({
           )}
         </>
       )}
-    </Card>
+    </CollapsibleSection>
   );
 }
 
@@ -639,12 +884,12 @@ function ContactsSection({
               <div key={contact.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20">
                   <span className="text-sm font-semibold text-[#6b26d9] dark:text-[#8249df]">
-                    {contact.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                    {(contact.name ?? '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
-                    {contact.name}
+                    {contact.name ?? 'Unknown'}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
                     {contact.title && <span>{contact.title}</span>}
@@ -701,36 +946,71 @@ function ContactsSection({
 }
 
 function TechnicalDetailsSection({
-  architectureData,
+  techDetails,
   isLoading,
   error,
+  accountId,
 }: {
-  architectureData: { content: string; lastUpdated: string | null } | undefined;
+  techDetails: { details: string | null } | undefined;
   isLoading: boolean;
   error: Error | null;
+  accountId: string;
 }) {
+  const navigate = useNavigate();
+  const preview = useMemo(() => {
+    if (!techDetails?.details) return [];
+    const sections = parseSummary(techDetails.details);
+    // Show first 3 sections, first bullet each
+    return sections.slice(0, 3).map((s) => ({
+      heading: s.heading,
+      bullet: s.bullets[0] ?? '',
+    }));
+  }, [techDetails]);
+
   return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          Technical Details
-          {architectureData?.lastUpdated && (
-            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
-              Updated {formatDate(architectureData.lastUpdated)}
-            </span>
-          )}
-        </span>
-      }
-    >
+    <Card title="Technical Details">
       {error ? (
         <SectionError message="Failed to load technical details." />
       ) : isLoading ? (
         <div className="flex items-center gap-3">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#6b26d9] border-t-transparent dark:border-[#8249df]" />
-          <p className="text-sm text-[#6b677e] dark:text-[#858198]">Loading technical details...</p>
+          <p className="text-sm text-[#6b677e] dark:text-[#858198]">
+            Analyzing calls, emails, and architecture docs...
+          </p>
         </div>
-      ) : architectureData?.content ? (
-        <AccountSummaryContent overview={architectureData.content} />
+      ) : preview.length > 0 ? (
+        <div className="space-y-3">
+          {preview.map((s, i) => (
+            <div key={i}>
+              {s.heading && (
+                <p className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2] mb-0.5">
+                  {s.heading}
+                </p>
+              )}
+              {s.bullet && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                  {s.bullet}
+                </p>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                to: '/accounts/$accountId/technical-details',
+                params: { accountId },
+              })
+            }
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline"
+          >
+            View full technical details
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14" />
+              <path d="M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       ) : (
         <p className="text-sm text-[#6b677e] dark:text-[#858198]">No technical details available.</p>
       )}
@@ -778,17 +1058,11 @@ function MeetingsSection({
   const visiblePast = expandedPast ? past : past.slice(0, PREVIEW_COUNT);
 
   return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          Meetings
-          {!error && !isLoading && (
-            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
-              ({(meetings ?? []).length})
-            </span>
-          )}
-        </span>
-      }
+    <CollapsibleSection
+      title="Meetings"
+      count={(meetings ?? []).length}
+      isLoading={isLoading}
+      error={error}
     >
       {error ? (
         <SectionError message="Failed to load meetings." />
@@ -871,7 +1145,7 @@ function MeetingsSection({
           )}
         </div>
       )}
-    </Card>
+    </CollapsibleSection>
   );
 }
 
@@ -879,6 +1153,7 @@ export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const { data: account, isLoading: accountLoading, error: accountError } = useAccount(accountId);
   const { data: calls, isLoading: callsLoading, error: callsError } = useAccountInteractions(accountId, { sourceTypes: ['gong_call'] });
@@ -888,7 +1163,23 @@ export default function AccountDetailPage() {
   const { data: overviewData, isLoading: overviewLoading, error: overviewError } = useAccountOverview(accountId);
   const { data: actionItemsData, isLoading: actionItemsLoading, error: actionItemsError } = useAccountActionItems(accountId);
   const { data: contacts, isLoading: contactsLoading, error: contactsError } = useAccountContacts(accountId);
-  const { data: architectureData, isLoading: architectureLoading, error: architectureError } = useAccountArchitecture(accountId);
+  const { data: techDetailsData, isLoading: techDetailsLoading, error: techDetailsError } = useAccountTechnicalDetails(accountId);
+  const { data: pocData, isLoading: pocLoading, error: pocError } = useAccountPOCSummary(accountId);
+
+  const completeAction = useCompleteActionItem();
+  const uncompleteAction = useUncompleteActionItem();
+  const [showCompletedItems, setShowCompletedItems] = useState(false);
+  const [showAllItems, setShowAllItems] = useState(false);
+
+  // Pre-warm Gong call briefs when calls load
+  const warmGongBriefs = useWarmGongBriefs();
+  const warmedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (accountId && calls && calls.length > 0 && warmedRef.current !== accountId) {
+      warmedRef.current = accountId;
+      warmGongBriefs.mutate(accountId);
+    }
+  }, [accountId, calls]);
 
   const totalOpportunityValue = useMemo(() => {
     if (!opportunities) return null;
@@ -941,12 +1232,12 @@ export default function AccountDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-2xl font-bold text-[#191726] dark:text-[#f2f2f2]">{displayAccount.name}</h1>
+            <h1 className="font-display text-xl md:text-2xl font-bold text-[#191726] dark:text-[#f2f2f2] truncate">{displayAccount.name}</h1>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-[#6b677e] dark:text-[#858198]">
             {displayAccount.region && <span>{displayAccount.region}</span>}
@@ -972,26 +1263,56 @@ export default function AccountDetailPage() {
         )}
       </div>
 
-      {/* AI Account Overview */}
-      <Card title="Account Summary">
-        {overviewError ? (
-          <SectionError message="Failed to load account overview." />
-        ) : overviewLoading ? (
-          <div className="flex items-center gap-3">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#6b26d9] border-t-transparent dark:border-[#8249df]" />
-            <p className="text-sm text-[#6b677e] dark:text-[#858198]">
-              Generating account overview...
-            </p>
-          </div>
-        ) : overviewData?.overview ? (
-          <AccountSummaryContent overview={overviewData.overview} />
-        ) : (
-          <p className="text-sm text-[#6b677e] dark:text-[#858198]">No overview available.</p>
-        )}
-      </Card>
+      {/* Account Summary & Technical Details */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <AccountSummarySection
+          overview={overviewData}
+          isLoading={overviewLoading}
+          error={overviewError}
+          accountId={accountId!}
+        />
+        <TechnicalDetailsSection
+          techDetails={techDetailsData}
+          isLoading={techDetailsLoading}
+          error={techDetailsError}
+          accountId={accountId!}
+        />
+      </div>
+
+      {/* POC Summary */}
+      {(pocLoading || pocData?.summary) && (
+        <POCStatusSection
+          pocData={pocData}
+          isLoading={pocLoading}
+          error={pocError}
+          accountId={accountId!}
+        />
+      )}
 
       {/* Action Items */}
-      <Card title="Action Items">
+      <Card title={
+        <span className="flex items-center gap-3">
+          Action Items
+          {actionItemsData?.items && actionItemsData.items.length > 0 && (
+            <span className="flex rounded-lg border border-[#dedde4] dark:border-[#2a2734] overflow-hidden text-[10px] font-semibold uppercase tracking-wider">
+              <button
+                type="button"
+                onClick={() => setShowAllItems(false)}
+                className={`px-2.5 py-1 transition-colors cursor-pointer ${!showAllItems ? 'bg-[#6b26d9] dark:bg-[#8249df] text-white' : 'text-[#6b677e] dark:text-[#858198] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f]'}`}
+              >
+                Mine
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAllItems(true)}
+                className={`px-2.5 py-1 transition-colors cursor-pointer ${showAllItems ? 'bg-[#6b26d9] dark:bg-[#8249df] text-white' : 'text-[#6b677e] dark:text-[#858198] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f]'}`}
+              >
+                All
+              </button>
+            </span>
+          )}
+        </span>
+      }>
         {actionItemsError ? (
           <SectionError message="Failed to load action items." />
         ) : actionItemsLoading ? (
@@ -1001,124 +1322,178 @@ export default function AccountDetailPage() {
               Extracting action items...
             </p>
           </div>
-        ) : actionItemsData?.items && actionItemsData.items.length > 0 ? (
-          <ul className="space-y-3">
-            {actionItemsData.items.map((item: ActionItem, i: number) => (
-              <li key={i} className="flex items-start gap-3">
-                <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#dedde4] dark:border-[#2a2734]">
-                  <span className="h-2 w-2 rounded-sm bg-[#6b26d9]/40 dark:bg-[#8249df]/40" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-[#191726] dark:text-[#f2f2f2]">
-                    {item.action}
-                  </p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                    <span>{item.source}</span>
-                    <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                    <span>{formatDateTime(item.date)}</span>
-                    {item.owner && (
-                      <>
-                        <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                        <span>{item.owner}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
+        ) : actionItemsData?.items && actionItemsData.items.length > 0 ? (() => {
+          const allItems = actionItemsData.items;
+          const myItems = allItems.filter((i: ActionItem) => {
+            if (!i.owner || !user?.name) return false;
+            const ownerLower = i.owner.toLowerCase();
+            const nameLower = user.name.toLowerCase();
+            return ownerLower.includes(nameLower) || nameLower.includes(ownerLower)
+              || nameLower.split(' ').some((part) => part.length > 1 && ownerLower.includes(part));
+          });
+          const baseItems = showAllItems ? allItems : myItems;
+          const openItems = baseItems.filter((i: ActionItem) => i.status === 'open');
+          const doneItems = baseItems.filter((i: ActionItem) => i.status === 'done');
+          const displayItems = showCompletedItems ? baseItems : openItems;
+
+          return (
+            <>
+              {displayItems.length === 0 ? (
+                <p className="text-sm text-[#6b677e] dark:text-[#858198]">
+                  {showAllItems ? 'No action items found.' : 'No action items assigned to you.'}
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {displayItems.map((item: ActionItem) => {
+                    const isDone = item.status === 'done';
+                    const isOwner = item.owner && user?.name && (() => {
+                      const ownerLower = item.owner!.toLowerCase();
+                      const nameLower = user.name.toLowerCase();
+                      return ownerLower.includes(nameLower) || nameLower.includes(ownerLower)
+                        || nameLower.split(' ').some((part) => part.length > 1 && ownerLower.includes(part));
+                    })();
+                    return (
+                      <li key={item.id} className={`flex items-start gap-3${isDone ? ' opacity-60' : ''}`}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!accountId) return;
+                            if (isDone) {
+                              uncompleteAction.mutate({ accountId, hash: item.id });
+                            } else {
+                              completeAction.mutate({ accountId, hash: item.id });
+                            }
+                          }}
+                          className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#dedde4] dark:border-[#2a2734] transition-colors hover:border-[#6b26d9] dark:hover:border-[#8249df] cursor-pointer"
+                        >
+                          {isDone ? (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-[#6b26d9] dark:text-[#8249df]">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          ) : (
+                            <span className="h-2 w-2 rounded-sm bg-[#6b26d9]/40 dark:bg-[#8249df]/40" />
+                          )}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm text-[#191726] dark:text-[#f2f2f2]${isDone ? ' line-through' : ''}`}>
+                            {item.action}
+                          </p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
+                            <span>{item.source}</span>
+                            <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                            <span>{formatDateTime(item.date)}</span>
+                            {item.owner && (
+                              <>
+                                <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                                <span className={isOwner ? 'font-semibold text-[#6b26d9] dark:text-[#8249df]' : ''}>{item.owner}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {doneItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCompletedItems(!showCompletedItems)}
+                  className="mt-4 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
+                >
+                  {showCompletedItems ? 'Hide completed' : `View all (${doneItems.length} completed)`}
+                </button>
+              )}
+            </>
+          );
+        })() : (
           <p className="text-sm text-[#6b677e] dark:text-[#858198]">No action items found.</p>
         )}
       </Card>
 
-      {/* Opportunities */}
-      <Card
-        title={
-          <span className="flex items-center gap-2">
-            Opportunities
-            {opportunities && (
-              <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
-                ({opportunities.filter((o: Opportunity) => {
-                  const stage = (o.stage ?? '').toLowerCase();
-                  return !stage.includes('closed');
-                }).length} open)
-              </span>
-            )}
-          </span>
-        }
-      >
-        {!opportunities ? (
-          <p className="text-sm text-[#6b677e] dark:text-[#858198]">Loading opportunities...</p>
-        ) : (() => {
-          const openOpps = opportunities
-            .filter((o: Opportunity) => {
-              const stage = (o.stage ?? '').toLowerCase();
-              return !stage.includes('closed');
-            })
-            .sort((a: Opportunity, b: Opportunity) => {
-              const da = a.closeDate ?? '';
-              const db = b.closeDate ?? '';
-              return da.localeCompare(db);
-            });
-          return openOpps.length === 0 ? (
-            <p className="text-sm text-[#6b677e] dark:text-[#858198]">No open opportunities.</p>
-          ) : (
-            <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
-              {openOpps.map((opp: Opportunity) => {
-                const val = opp.amount ?? (opp as unknown as Record<string, unknown>).arr as number | null;
-                return (
-                  <div
-                    key={opp.id}
-                    className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
-                        {opp.name}
-                      </p>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                        <span className="inline-flex items-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20 px-2 py-0.5 text-xs font-medium text-[#6b26d9] dark:text-[#8249df]">
-                          {opp.stage}
-                        </span>
-                        {opp.closeDate && (
-                          <>
-                            <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                            <span>Close {formatDate(opp.closeDate)}</span>
-                          </>
-                        )}
-                        {opp.owner && (
-                          <>
-                            <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                            <span>{opp.owner}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {val != null && val > 0 && (
-                      <span className="shrink-0 text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
-                        {formatCurrency(val)}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-      </Card>
-
-      {/* Contacts & Technical Details */}
+      {/* Contacts & Opportunities */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ContactsSection
           contacts={contacts}
           isLoading={contactsLoading}
           error={contactsError}
         />
-        <TechnicalDetailsSection
-          architectureData={architectureData}
-          isLoading={architectureLoading}
-          error={architectureError}
-        />
+        <Card
+          title={
+            <span className="flex items-center gap-2">
+              Opportunities
+              {opportunities && (
+                <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
+                  ({opportunities.filter((o: Opportunity) => {
+                    const stage = (o.stage ?? '').toLowerCase();
+                    return !stage.includes('closed');
+                  }).length} open)
+                </span>
+              )}
+            </span>
+          }
+        >
+          {!opportunities ? (
+            <p className="text-sm text-[#6b677e] dark:text-[#858198]">Loading opportunities...</p>
+          ) : (() => {
+            const openOpps = opportunities
+              .filter((o: Opportunity) => {
+                const stage = (o.stage ?? '').toLowerCase();
+                return !stage.includes('closed');
+              })
+              .sort((a: Opportunity, b: Opportunity) => {
+                const da = a.closeDate ?? '';
+                const db = b.closeDate ?? '';
+                return da.localeCompare(db);
+              });
+            return openOpps.length === 0 ? (
+              <p className="text-sm text-[#6b677e] dark:text-[#858198]">No open opportunities.</p>
+            ) : (
+              <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
+                {openOpps.map((opp: Opportunity) => {
+                  const val = opp.amount ?? (opp as unknown as Record<string, unknown>).arr as number | null;
+                  return (
+                    <div
+                      key={opp.id}
+                      className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
+                          {opp.name}
+                        </p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
+                          <span className="inline-flex items-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20 px-2 py-0.5 text-xs font-medium text-[#6b26d9] dark:text-[#8249df]">
+                            {opp.stage}
+                          </span>
+                          {opp.closeDate && (
+                            <>
+                              <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                              <span>Close {formatDate(opp.closeDate)}</span>
+                            </>
+                          )}
+                          {opp.owner && (
+                            <>
+                              <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                              <span>{opp.owner}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
+                        {val != null && val > 0 && (
+                          <span className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                            {formatCurrency(val)}
+                          </span>
+                        )}
+                        {pocData?.health && <POCHealthDot health={pocData.health} />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </Card>
       </div>
 
       {/* Calls, Emails & Meetings */}
