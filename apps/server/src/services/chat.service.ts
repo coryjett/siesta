@@ -44,7 +44,7 @@ const MAX_TOOL_ITERATIONS = 10;
 
 function buildSystemPrompt(user: UserContext, pageContext: PageContext): string {
   const parts = [
-    `You are Cyber SE, an AI assistant for Siesta — a Sales Engineering portfolio management platform.`,
+    `You are Digital Sherpa, an AI assistant for Siesta — a Sales Engineering portfolio management platform.`,
     `You help sales engineers understand their accounts, interactions, opportunities, and portfolio health.`,
     '',
     `## Current User`,

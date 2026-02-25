@@ -7,6 +7,8 @@ import {
   useAccountOpportunities,
   useAccountOverview,
   useAccountActionItems,
+  useAccountContacts,
+  useAccountArchitecture,
   useEmailThreadSummary,
 } from '../../api/queries/accounts';
 import type { ActionItem } from '../../api/queries/accounts';
@@ -17,7 +19,7 @@ import ActivityTimeline from '../../components/accounts/activity-timeline';
 import NoteList from '../../components/notes/note-list';
 import { formatDateTime, formatDate } from '../../lib/date';
 import { formatCurrency, formatCompactCurrency } from '../../lib/currency';
-import type { Account, Interaction, Opportunity } from '@siesta/shared';
+import type { Account, Contact, Interaction, Opportunity } from '@siesta/shared';
 
 const PREVIEW_COUNT = 5;
 
@@ -597,6 +599,282 @@ function InteractionSection({
   );
 }
 
+function ContactsSection({
+  contacts,
+  isLoading,
+  error,
+}: {
+  contacts: Contact[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const allContacts = contacts ?? [];
+  const hasMore = allContacts.length > PREVIEW_COUNT;
+  const visible = expanded ? allContacts : allContacts.slice(0, PREVIEW_COUNT);
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          Contacts
+          {!error && !isLoading && (
+            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
+              ({allContacts.length})
+            </span>
+          )}
+        </span>
+      }
+    >
+      {error ? (
+        <SectionError message="Failed to load contacts." />
+      ) : isLoading ? (
+        <p className="text-sm text-[#6b677e] dark:text-[#858198]">Loading contacts...</p>
+      ) : allContacts.length === 0 ? (
+        <p className="text-sm text-[#6b677e] dark:text-[#858198]">No contacts found.</p>
+      ) : (
+        <>
+          <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
+            {visible.map((contact) => (
+              <div key={contact.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20">
+                  <span className="text-sm font-semibold text-[#6b26d9] dark:text-[#8249df]">
+                    {contact.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
+                    {contact.name}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
+                    {contact.title && <span>{contact.title}</span>}
+                    {contact.title && contact.email && (
+                      <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                    )}
+                    {contact.email && (
+                      <a
+                        href={`mailto:${contact.email}`}
+                        className="text-[#6b26d9] dark:text-[#8249df] hover:underline truncate"
+                      >
+                        {contact.email}
+                      </a>
+                    )}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
+                    {contact.gongCallCount > 0 && (
+                      <span>{contact.gongCallCount} call{contact.gongCallCount !== 1 ? 's' : ''}</span>
+                    )}
+                    {contact.emailCount > 0 && (
+                      <>
+                        {contact.gongCallCount > 0 && (
+                          <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                        )}
+                        <span>{contact.emailCount} email{contact.emailCount !== 1 ? 's' : ''}</span>
+                      </>
+                    )}
+                    {contact.lastInteractionDate && (
+                      <>
+                        {(contact.gongCallCount > 0 || contact.emailCount > 0) && (
+                          <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                        )}
+                        <span>Last: {formatDate(contact.lastInteractionDate)}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              className="mt-3 w-full rounded-lg border border-[#dedde4] dark:border-[#2a2734] px-3 py-2 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:bg-[#6b26d9]/5 dark:hover:bg-[#8249df]/10 transition-colors"
+            >
+              {expanded ? `Show top ${PREVIEW_COUNT}` : `View all ${allContacts.length} contacts`}
+            </button>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function TechnicalDetailsSection({
+  architectureData,
+  isLoading,
+  error,
+}: {
+  architectureData: { content: string; lastUpdated: string | null } | undefined;
+  isLoading: boolean;
+  error: Error | null;
+}) {
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          Technical Details
+          {architectureData?.lastUpdated && (
+            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
+              Updated {formatDate(architectureData.lastUpdated)}
+            </span>
+          )}
+        </span>
+      }
+    >
+      {error ? (
+        <SectionError message="Failed to load technical details." />
+      ) : isLoading ? (
+        <div className="flex items-center gap-3">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#6b26d9] border-t-transparent dark:border-[#8249df]" />
+          <p className="text-sm text-[#6b677e] dark:text-[#858198]">Loading technical details...</p>
+        </div>
+      ) : architectureData?.content ? (
+        <AccountSummaryContent overview={architectureData.content} />
+      ) : (
+        <p className="text-sm text-[#6b677e] dark:text-[#858198]">No technical details available.</p>
+      )}
+    </Card>
+  );
+}
+
+function MeetingsSection({
+  meetings,
+  isLoading,
+  error,
+  onInteractionClick,
+}: {
+  meetings: Interaction[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  onInteractionClick: (interaction: { id: string; sourceType: string }) => void;
+}) {
+  const [showPast, setShowPast] = useState(false);
+  const [expandedUpcoming, setExpandedUpcoming] = useState(false);
+  const [expandedPast, setExpandedPast] = useState(false);
+
+  const now = new Date();
+  const { upcoming, past } = useMemo(() => {
+    const all = meetings ?? [];
+    const upcoming: Interaction[] = [];
+    const past: Interaction[] = [];
+    for (const m of all) {
+      if (new Date(m.date) >= now) {
+        upcoming.push(m);
+      } else {
+        past.push(m);
+      }
+    }
+    // Upcoming: soonest first
+    upcoming.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Past: most recent first
+    past.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return { upcoming, past };
+  }, [meetings]);
+
+  const upcomingHasMore = upcoming.length > PREVIEW_COUNT;
+  const pastHasMore = past.length > PREVIEW_COUNT;
+  const visibleUpcoming = expandedUpcoming ? upcoming : upcoming.slice(0, PREVIEW_COUNT);
+  const visiblePast = expandedPast ? past : past.slice(0, PREVIEW_COUNT);
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          Meetings
+          {!error && !isLoading && (
+            <span className="text-xs font-normal text-[#6b677e] dark:text-[#858198]">
+              ({(meetings ?? []).length})
+            </span>
+          )}
+        </span>
+      }
+    >
+      {error ? (
+        <SectionError message="Failed to load meetings." />
+      ) : isLoading ? (
+        <p className="text-sm text-[#6b677e] dark:text-[#858198]">Loading meetings...</p>
+      ) : (meetings ?? []).length === 0 ? (
+        <p className="text-sm text-[#6b677e] dark:text-[#858198]">No meetings found.</p>
+      ) : (
+        <div className="space-y-4">
+          {/* Upcoming Meetings */}
+          {upcoming.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#6b26d9] dark:text-[#8249df] mb-2">
+                Upcoming ({upcoming.length})
+              </p>
+              <ActivityTimeline
+                interactions={visibleUpcoming}
+                onInteractionClick={onInteractionClick}
+              />
+              {upcomingHasMore && (
+                <button
+                  type="button"
+                  onClick={() => setExpandedUpcoming(!expandedUpcoming)}
+                  className="mt-2 w-full rounded-lg border border-[#dedde4] dark:border-[#2a2734] px-3 py-1.5 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:bg-[#6b26d9]/5 dark:hover:bg-[#8249df]/10 transition-colors"
+                >
+                  {expandedUpcoming ? `Show next ${PREVIEW_COUNT}` : `View all ${upcoming.length} upcoming`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Past Meetings */}
+          {past.length > 0 && (
+            <div>
+              {upcoming.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setShowPast(!showPast)}
+                  className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-[#6b677e] dark:text-[#858198] mb-2 hover:text-[#191726] dark:hover:text-[#f2f2f2] transition-colors"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`transition-transform ${showPast ? 'rotate-90' : ''}`}
+                  >
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                  Past ({past.length})
+                </button>
+              ) : (
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#6b677e] dark:text-[#858198] mb-2">
+                  Past ({past.length})
+                </p>
+              )}
+              {(upcoming.length === 0 || showPast) && (
+                <>
+                  <ActivityTimeline
+                    interactions={visiblePast}
+                    onInteractionClick={onInteractionClick}
+                  />
+                  {pastHasMore && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPast(!expandedPast)}
+                      className="mt-2 w-full rounded-lg border border-[#dedde4] dark:border-[#2a2734] px-3 py-1.5 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:bg-[#6b26d9]/5 dark:hover:bg-[#8249df]/10 transition-colors"
+                    >
+                      {expandedPast ? `Show last ${PREVIEW_COUNT}` : `View all ${past.length} past`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -609,6 +887,8 @@ export default function AccountDetailPage() {
   const { data: opportunities } = useAccountOpportunities(accountId);
   const { data: overviewData, isLoading: overviewLoading, error: overviewError } = useAccountOverview(accountId);
   const { data: actionItemsData, isLoading: actionItemsLoading, error: actionItemsError } = useAccountActionItems(accountId);
+  const { data: contacts, isLoading: contactsLoading, error: contactsError } = useAccountContacts(accountId);
+  const { data: architectureData, isLoading: architectureLoading, error: architectureError } = useAccountArchitecture(accountId);
 
   const totalOpportunityValue = useMemo(() => {
     if (!opportunities) return null;
@@ -827,6 +1107,20 @@ export default function AccountDetailPage() {
         })()}
       </Card>
 
+      {/* Contacts & Technical Details */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ContactsSection
+          contacts={contacts}
+          isLoading={contactsLoading}
+          error={contactsError}
+        />
+        <TechnicalDetailsSection
+          architectureData={architectureData}
+          isLoading={architectureLoading}
+          error={architectureError}
+        />
+      </div>
+
       {/* Calls, Emails & Meetings */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <CallSection
@@ -841,9 +1135,8 @@ export default function AccountDetailPage() {
           error={emailsError}
           accountId={accountId!}
         />
-        <InteractionSection
-          title="Meetings"
-          items={meetings}
+        <MeetingsSection
+          meetings={meetings}
           isLoading={meetingsLoading}
           error={meetingsError}
           onInteractionClick={handleInteractionClick}
@@ -851,9 +1144,7 @@ export default function AccountDetailPage() {
       </div>
 
       {/* Notes */}
-      <Card title="Notes">
-        <NoteList accountId={accountId} />
-      </Card>
+      <NoteList accountId={accountId} />
     </div>
   );
 }

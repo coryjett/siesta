@@ -125,11 +125,12 @@ async function doCallTool<T>(
   const elapsed = Date.now() - reqStart;
   logger.info({ toolName, status: response.status, elapsed, contentType: response.headers.get('Content-Type') }, `[mcp-client] Response for ${toolName}`);
 
-  // Retry on 401 with fresh token
-  if (response.status === 401 && !isRetry) {
-    logger.info('MCP returned 401, refreshing token and retrying');
-    const freshToken = await getAccessToken();
+  // Retry on 401 (expired token) or 404 (stale session) with fresh session
+  if ((response.status === 401 || response.status === 404) && !isRetry) {
+    logger.info({ status: response.status }, 'MCP session invalid, re-initializing and retrying');
     initialized = false;
+    sessionId = null;
+    const freshToken = await getAccessToken();
     await initialize(freshToken);
     return doCallTool<T>(toolName, args, freshToken, true);
   }
