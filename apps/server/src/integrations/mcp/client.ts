@@ -1,11 +1,15 @@
 import { env } from '../../config/env.js';
 import { getAccessToken } from './auth.js';
 import { logger } from '../../utils/logger.js';
-import type { JsonRpcRequest, McpToolResult } from './types.js';
+import type { JsonRpcRequest, McpTool, McpToolResult } from './types.js';
 
 let sessionId: string | null = null;
 let requestId = 0;
 let initialized = false;
+
+// In-memory cache for MCP tools list (5-min TTL)
+let toolsCache: { tools: McpTool[]; expiresAt: number } | null = null;
+const TOOLS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function nextId(): number {
   return ++requestId;
@@ -208,10 +212,86 @@ function parseToolResult<T>(result: McpToolResult): T {
 }
 
 /**
+ * List available MCP tools. Cached in-memory for 5 minutes.
+ */
+export async function listTools(): Promise<McpTool[]> {
+  if (toolsCache && Date.now() < toolsCache.expiresAt) {
+    return toolsCache.tools;
+  }
+
+  const token = await getAccessToken();
+  await initialize(token);
+
+  const request: JsonRpcRequest = {
+    jsonrpc: '2.0',
+    id: nextId(),
+    method: 'tools/list',
+    params: {},
+  };
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+    Authorization: `Bearer ${token}`,
+  };
+
+  if (sessionId) {
+    headers['Mcp-Session-Id'] = sessionId;
+  }
+
+  const response = await fetch(env.MCP_SERVER_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`MCP tools/list failed: ${response.status} ${text}`);
+  }
+
+  const contentType = response.headers.get('Content-Type') ?? '';
+  let tools: McpTool[];
+
+  if (contentType.includes('text/event-stream')) {
+    const text = await response.text();
+    const lines = text.split('\n');
+    let parsed: { tools: McpTool[] } | null = null;
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6).trim();
+        if (!data || data === '[DONE]') continue;
+        try {
+          const json = JSON.parse(data);
+          if (json.result?.tools) {
+            parsed = json.result;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+    tools = parsed?.tools ?? [];
+  } else {
+    const json = await response.json();
+    if (json.error) {
+      throw new Error(`MCP tools/list error: ${json.error.message}`);
+    }
+    tools = json.result?.tools ?? [];
+  }
+
+  toolsCache = { tools, expiresAt: Date.now() + TOOLS_CACHE_TTL_MS };
+  logger.info({ count: tools.length }, 'MCP tools list fetched and cached');
+  return tools;
+}
+
+/**
  * Reset the MCP session (useful for reconnection).
  */
 export function resetSession(): void {
   sessionId = null;
   initialized = false;
   requestId = 0;
+  toolsCache = null;
 }

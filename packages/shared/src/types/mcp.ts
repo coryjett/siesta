@@ -13,6 +13,7 @@ export interface Account {
   products: string[];
   lifecyclePhase: string | null;
   productionStatus: string | null;
+  openOpportunityCount: number;
 }
 
 export interface AccountDetail extends Account {

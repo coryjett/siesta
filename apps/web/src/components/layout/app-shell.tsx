@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/auth-context';
 import Sidebar from './sidebar';
 import Header from './header';
 import { Spinner } from '../common/loading';
+import ChatWidget from '../chat/chat-widget';
 
 const routeTitles: Record<string, string> = {
   '/': 'Home',
@@ -49,6 +50,7 @@ export default function AppShell() {
           <Outlet />
         </main>
       </div>
+      <ChatWidget />
     </div>
   );
 }

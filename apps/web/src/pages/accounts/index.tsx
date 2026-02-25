@@ -6,7 +6,7 @@ import { PageLoading } from '../../components/common/loading';
 import { formatCurrency } from '../../lib/currency';
 import type { Account } from '@siesta/shared';
 
-type SortKey = 'name' | 'openPipeline' | 'cseOwner';
+type SortKey = 'name' | 'openPipeline' | 'openOpportunityCount' | 'cseOwner';
 type SortDir = 'asc' | 'desc';
 
 export default function AccountsPage() {
@@ -53,6 +53,8 @@ export default function AccountsPage() {
         cmp = a.name.localeCompare(b.name);
       } else if (sortKey === 'openPipeline') {
         cmp = (a.openPipeline ?? 0) - (b.openPipeline ?? 0);
+      } else if (sortKey === 'openOpportunityCount') {
+        cmp = (a.openOpportunityCount ?? 0) - (b.openOpportunityCount ?? 0);
       } else if (sortKey === 'cseOwner') {
         cmp = (a.cseOwner ?? '').localeCompare(b.cseOwner ?? '');
       }
@@ -92,7 +94,7 @@ export default function AccountsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-[#191726] dark:text-[#f2f2f2]">Opportunities</h1>
+        <h1 className="font-display text-2xl font-bold text-[#191726] dark:text-[#f2f2f2]">Accounts</h1>
       </div>
 
       {/* Filters */}
@@ -115,6 +117,7 @@ export default function AccountsPage() {
             <tr>
               {([
                 ['name', 'Name'],
+                ['openOpportunityCount', 'Open Opps'],
                 ['openPipeline', 'Open Pipeline'],
                 ['cseOwner', 'Technical Lead'],
               ] as [SortKey, string][]).map(([key, label]) => (
@@ -140,6 +143,9 @@ export default function AccountsPage() {
                 <td className="px-4 py-3 text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">
                   {account.name}
                 </td>
+                <td className="px-4 py-3 text-sm text-[#191726] dark:text-[#f2f2f2] tabular-nums">
+                  {account.openOpportunityCount ?? 0}
+                </td>
                 <td className="px-4 py-3 text-sm text-[#191726] dark:text-[#f2f2f2]">
                   {formatCurrency(account.openPipeline)}
                 </td>
@@ -150,7 +156,7 @@ export default function AccountsPage() {
             ))}
             {accountList.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-sm text-[#6b677e] dark:text-[#858198]">
+                <td colSpan={4} className="px-4 py-8 text-center text-sm text-[#6b677e] dark:text-[#858198]">
                   No accounts found.
                 </td>
               </tr>

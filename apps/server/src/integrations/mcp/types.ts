@@ -185,6 +185,14 @@ export interface McpArchitectureDoc {
   last_updated: string | null;
 }
 
+// ── MCP Tool schema types ──
+
+export interface McpTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
 // ── JSON-RPC types ──
 
 export interface JsonRpcRequest {

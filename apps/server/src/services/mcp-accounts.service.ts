@@ -45,6 +45,7 @@ function mapAccount(raw: Record<string, unknown>) {
     products: raw.products ?? raw.productsOwned ?? raw.products_owned ?? [],
     lifecyclePhase: raw.lifecyclePhase ?? raw.lifecycle_phase ?? null,
     productionStatus: raw.productionStatus ?? raw.production_status ?? null,
+    openOpportunityCount: 0,
   };
 }
 
@@ -73,7 +74,28 @@ export async function listAccounts(filters: {
   return cachedCall(cacheKey, 600, async () => {
     const result = await callTool<unknown>('filter_accounts', args);
     const accounts = unwrapArray<Record<string, unknown>>(result);
-    return accounts.map(mapAccount);
+    const mapped = accounts.map(mapAccount);
+
+    // Enrich with open non-renewal opportunity counts
+    const oppResults = await Promise.allSettled(
+      mapped.map((acct) =>
+        callTool<unknown>('get_opportunities', { company_id: acct.id as string })
+      ),
+    );
+
+    for (let i = 0; i < mapped.length; i++) {
+      const r = oppResults[i];
+      if (r?.status === 'fulfilled') {
+        const opps = unwrapArray<Record<string, unknown>>(r.value);
+        mapped[i].openOpportunityCount = opps.filter((o) => {
+          const closed = o.isClosed ?? o.is_closed ?? false;
+          const type = String(o.type ?? o.opportunityType ?? '').toLowerCase();
+          return !closed && !type.includes('renewal');
+        }).length;
+      }
+    }
+
+    return mapped;
   });
 }
 

@@ -28,6 +28,27 @@ function normalizeSourceType(raw: string): string {
   return SOURCE_TYPE_MAP[raw] ?? raw;
 }
 
+/** Reverse mapping: UI filter types → MCP source types */
+const REVERSE_SOURCE_TYPE_MAP: Record<string, string[]> = {
+  meeting: ['calendar_event'],
+  call: ['gong_call', 'gong'],
+  email: ['gmail', 'gmail_email'],
+  ticket: ['zendesk_ticket', 'github_issue'],
+};
+
+function expandSourceTypes(uiTypes: string[]): string[] {
+  const expanded: string[] = [];
+  for (const t of uiTypes) {
+    const mapped = REVERSE_SOURCE_TYPE_MAP[t];
+    if (mapped) {
+      expanded.push(...mapped);
+    } else {
+      expanded.push(t);
+    }
+  }
+  return expanded;
+}
+
 interface McpSearchAccount {
   id: string;
   name: string;
@@ -49,7 +70,7 @@ export async function searchPortfolio(query: string, filters: {
   toDate?: string;
 } = {}): Promise<SearchResult[]> {
   const args: Record<string, unknown> = { query };
-  if (filters.sourceTypes?.length) args.source_types = filters.sourceTypes;
+  if (filters.sourceTypes?.length) args.source_types = expandSourceTypes(filters.sourceTypes);
   if (filters.fromDate) args.from_date = filters.fromDate;
   if (filters.toDate) args.to_date = filters.toDate;
 
