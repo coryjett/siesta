@@ -52,7 +52,7 @@ export async function buildApp() {
     if (env.NODE_ENV === 'production') {
       reply.header(
         'Content-Security-Policy',
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.cdnfonts.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com https://fonts.cdnfonts.com",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.cdnfonts.com; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self' https://fonts.gstatic.com https://fonts.cdnfonts.com",
       );
     }
   });

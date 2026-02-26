@@ -1,9 +1,13 @@
 import { useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQueries } from '@tanstack/react-query';
 import { useHomeData, useMyActionItems } from '../api/queries/home';
 import { useCompleteActionItem, useUncompleteActionItem } from '../api/queries/accounts';
+import type { POCSummaryResponse } from '../api/queries/accounts';
+import { api } from '../api/client';
 import { useAuth } from '../contexts/auth-context';
 import { PageLoading } from '../components/common/loading';
+import { CompanyLogo } from '../components/common/company-logo';
 import { formatCompactCurrency } from '../lib/currency';
 import { formatDate, formatDateTime } from '../lib/date';
 import type { Account } from '@siesta/shared';
@@ -42,19 +46,39 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
   );
 }
 
+// ── POC Health Dot ──
+
+function POCHealthDot({ health }: { health: { rating: 'green' | 'yellow' | 'red'; reason: string } }) {
+  const color = { green: 'bg-emerald-500', yellow: 'bg-amber-500', red: 'bg-red-500' }[health.rating];
+  const label = { green: 'Healthy', yellow: 'Caution', red: 'At Risk' }[health.rating];
+
+  return (
+    <span
+      className="absolute bottom-2.5 right-2.5"
+      title={`${label}: ${health.reason}`}
+    >
+      <span className={`inline-block h-3 w-3 rounded-full ${color} shadow-sm`} />
+    </span>
+  );
+}
+
 // ── Account Row ──
 
-function AccountRow({ account, onClick }: { account: Account; onClick: () => void }) {
+function AccountRow({ account, health, onClick }: { account: Account; health?: { rating: 'green' | 'yellow' | 'red'; reason: string } | null; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-4 transition-all hover:border-[#6b26d9]/30 dark:hover:border-[#8249df]/30 hover:shadow-sm"
+      className="relative w-full text-left rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-4 transition-all hover:border-[#6b26d9]/30 dark:hover:border-[#8249df]/30 hover:shadow-sm"
     >
+      {health && <POCHealthDot health={health} />}
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
-          {account.name}
-        </p>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <CompanyLogo name={account.name} />
+          <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
+            {account.name}
+          </p>
+        </div>
         {account.openPipeline != null && account.openPipeline > 0 && (
           <span className="shrink-0 text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
             {formatCompactCurrency(account.openPipeline)}
@@ -104,6 +128,29 @@ export default function HomePage() {
     const accounts = data?.myAccounts ?? [];
     return accounts.reduce((sum, a) => sum + (a.openPipeline ?? 0), 0);
   }, [data]);
+
+  // Prefetch POC summaries for account health dots
+  const accountIds = useMemo(() => {
+    return (data?.myAccounts ?? []).map((a) => a.id);
+  }, [data]);
+
+  const pocQueries = useQueries({
+    queries: accountIds.map((id) => ({
+      queryKey: ['accounts', id, 'poc-summary'],
+      queryFn: () => api.get<POCSummaryResponse>(`/accounts/${id}/poc-summary`),
+      staleTime: 60 * 60 * 1000,
+      retry: 1,
+    })),
+  });
+
+  const healthMap = useMemo(() => {
+    const map = new Map<string, { rating: 'green' | 'yellow' | 'red'; reason: string }>();
+    accountIds.forEach((id, i) => {
+      const health = pocQueries[i]?.data?.health;
+      if (health) map.set(id, health);
+    });
+    return map;
+  }, [accountIds, pocQueries]);
 
   if (isLoading) return <PageLoading />;
 
@@ -162,6 +209,7 @@ export default function HomePage() {
                 <AccountRow
                   key={account.id}
                   account={account}
+                  health={healthMap.get(account.id)}
                   onClick={() =>
                     navigate({ to: '/accounts/$accountId', params: { accountId: account.id } })
                   }

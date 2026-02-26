@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAccounts } from '../../api/queries/accounts';
 import { useAuth } from '../../contexts/auth-context';
 import { PageLoading } from '../../components/common/loading';
+import { CompanyLogo } from '../../components/common/company-logo';
 import { formatCurrency } from '../../lib/currency';
 import type { Account } from '@siesta/shared';
 
@@ -141,7 +142,10 @@ export default function AccountsPage() {
                 }
               >
                 <td className="px-4 py-3 text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">
-                  {account.name}
+                  <div className="flex items-center gap-2.5">
+                    <CompanyLogo name={account.name} />
+                    {account.name}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-[#191726] dark:text-[#f2f2f2] tabular-nums">
                   {account.openOpportunityCount ?? 0}
