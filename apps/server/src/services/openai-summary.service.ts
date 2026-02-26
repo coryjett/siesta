@@ -226,6 +226,7 @@ export interface ActionItem {
   date: string;
   owner: string | null;
   status: 'open' | 'done';
+  completedAt: string | null;
 }
 
 /**
@@ -360,6 +361,7 @@ export async function extractActionItems(
           date,
           owner: item.owner ? String(item.owner) : null,
           status: 'open' as const,
+          completedAt: null,
         };
       });
     } catch (err) {

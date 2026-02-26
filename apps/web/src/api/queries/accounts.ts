@@ -176,6 +176,7 @@ export interface ActionItem {
   date: string;
   owner: string | null;
   status: 'open' | 'done';
+  completedAt: string | null;
 }
 
 export interface ActionItemsResponse {

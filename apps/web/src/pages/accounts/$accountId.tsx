@@ -1168,7 +1168,6 @@ export default function AccountDetailPage() {
 
   const completeAction = useCompleteActionItem();
   const uncompleteAction = useUncompleteActionItem();
-  const [showCompletedItems, setShowCompletedItems] = useState(false);
   const [showAllItems, setShowAllItems] = useState(false);
 
   // Pre-warm Gong call briefs when calls load
@@ -1334,7 +1333,7 @@ export default function AccountDetailPage() {
           const baseItems = showAllItems ? allItems : myItems;
           const openItems = baseItems.filter((i: ActionItem) => i.status === 'open');
           const doneItems = baseItems.filter((i: ActionItem) => i.status === 'done');
-          const displayItems = showCompletedItems ? baseItems : openItems;
+          const displayItems = openItems;
 
           return (
             <>
@@ -1388,6 +1387,12 @@ export default function AccountDetailPage() {
                                 <span className={isOwner ? 'font-semibold text-[#6b26d9] dark:text-[#8249df]' : ''}>{item.owner}</span>
                               </>
                             )}
+                            {isDone && item.completedAt && (
+                              <>
+                                <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                                <span>Completed {formatDateTime(item.completedAt)}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </li>
@@ -1398,10 +1403,10 @@ export default function AccountDetailPage() {
               {doneItems.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setShowCompletedItems(!showCompletedItems)}
+                  onClick={() => navigate({ to: '/action-items' })}
                   className="mt-4 text-xs font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
                 >
-                  {showCompletedItems ? 'Hide completed' : `View all (${doneItems.length} completed)`}
+                  View all ({doneItems.length} completed)
                 </button>
               )}
             </>

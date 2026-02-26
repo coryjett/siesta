@@ -17,7 +17,7 @@ export async function getActionItemsWithStatus(
   if (hashes.length === 0) return items;
 
   const completions = await db
-    .select({ itemHash: actionItemCompletions.itemHash })
+    .select({ itemHash: actionItemCompletions.itemHash, completedAt: actionItemCompletions.completedAt })
     .from(actionItemCompletions)
     .where(
       and(
@@ -26,11 +26,12 @@ export async function getActionItemsWithStatus(
       ),
     );
 
-  const completedSet = new Set(completions.map((c) => c.itemHash));
+  const completedMap = new Map(completions.map((c) => [c.itemHash, c.completedAt.toISOString()]));
 
   return items.map((item) => ({
     ...item,
-    status: completedSet.has(item.id) ? ('done' as const) : ('open' as const),
+    status: completedMap.has(item.id) ? ('done' as const) : ('open' as const),
+    completedAt: completedMap.get(item.id) ?? null,
   }));
 }
 
@@ -45,7 +46,10 @@ export async function completeActionItem(
   await db
     .insert(actionItemCompletions)
     .values({ itemHash, accountId, userId })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [actionItemCompletions.itemHash, actionItemCompletions.userId],
+      set: { completedAt: new Date() },
+    });
 }
 
 /**
@@ -107,7 +111,7 @@ export async function getUserActionItemsAcrossAccounts(
   if (hashes.length === 0) return allItems;
 
   const completions = await db
-    .select({ itemHash: actionItemCompletions.itemHash })
+    .select({ itemHash: actionItemCompletions.itemHash, completedAt: actionItemCompletions.completedAt })
     .from(actionItemCompletions)
     .where(
       and(
@@ -116,10 +120,11 @@ export async function getUserActionItemsAcrossAccounts(
       ),
     );
 
-  const completedSet = new Set(completions.map((c) => c.itemHash));
+  const completedMap = new Map(completions.map((c) => [c.itemHash, c.completedAt.toISOString()]));
 
   return allItems.map((item) => ({
     ...item,
-    status: completedSet.has(item.id) ? ('done' as const) : ('open' as const),
+    status: completedMap.has(item.id) ? ('done' as const) : ('open' as const),
+    completedAt: completedMap.get(item.id) ?? null,
   }));
 }

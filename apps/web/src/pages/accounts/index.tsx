@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAccounts } from '../../api/queries/accounts';
-import { useAuth } from '../../contexts/auth-context';
+import { useHomeData } from '../../api/queries/home';
 import { PageLoading } from '../../components/common/loading';
 import { CompanyLogo } from '../../components/common/company-logo';
 import { formatCurrency } from '../../lib/currency';
@@ -12,15 +12,20 @@ type SortDir = 'asc' | 'desc';
 
 export default function AccountsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [search, setSearch] = useState('');
-  const [myAccountsOnly, setMyAccountsOnly] = useState(false);
+  const [myAccountsOnly, setMyAccountsOnly] = useState(true);
   const [hasPipelineOnly, setHasPipelineOnly] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   // Fetch full list once; filter client-side for instant search
   const { data: accounts, isLoading, error } = useAccounts();
+  const { data: homeData } = useHomeData();
+
+  const myAccountIds = useMemo(() => {
+    if (!homeData?.myAccounts) return null;
+    return new Set(homeData.myAccounts.map((a) => a.id));
+  }, [homeData]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -33,8 +38,8 @@ export default function AccountsPage() {
 
   const accountList = useMemo(() => {
     let list = accounts ?? [];
-    if (myAccountsOnly && user?.name) {
-      list = list.filter((a: Account) => a.cseOwner === user.name);
+    if (myAccountsOnly && myAccountIds) {
+      list = list.filter((a: Account) => myAccountIds.has(a.id));
     }
     if (hasPipelineOnly) {
       list = list.filter((a: Account) => (a.openPipeline ?? 0) > 0);
@@ -62,7 +67,7 @@ export default function AccountsPage() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [accounts, search, myAccountsOnly, hasPipelineOnly, user?.name, sortKey, sortDir]);
+  }, [accounts, search, myAccountsOnly, hasPipelineOnly, myAccountIds, sortKey, sortDir]);
 
   if (isLoading && !accounts) return <PageLoading />;
 

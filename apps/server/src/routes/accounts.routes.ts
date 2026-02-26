@@ -14,6 +14,7 @@ import {
 import { getInteractionDetail } from '../services/mcp-interactions.service.js';
 import { summarizeEmailThread, summarizeAccount, summarizeTechnicalDetails, generateGongCallBrief, summarizePOCs, generateMeetingBrief } from '../services/openai-summary.service.js';
 import { getActionItemsWithStatus, completeActionItem, uncompleteActionItem } from '../services/action-items.service.js';
+import { invalidateCache } from '../services/cache.service.js';
 import { logger } from '../utils/logger.js';
 
 export async function accountsRoutes(app: FastifyInstance) {
@@ -204,6 +205,7 @@ export async function accountsRoutes(app: FastifyInstance) {
     '/api/accounts/:id/action-items/:hash/complete',
     async (request, reply) => {
       await completeActionItem(request.params.id, request.params.hash, request.user.id);
+      await invalidateCache(`home:my-action-items:${request.user.id}`);
       return reply.status(204).send();
     },
   );
@@ -216,6 +218,7 @@ export async function accountsRoutes(app: FastifyInstance) {
     '/api/accounts/:id/action-items/:hash/complete',
     async (request, reply) => {
       await uncompleteActionItem(request.params.hash, request.user.id);
+      await invalidateCache(`home:my-action-items:${request.user.id}`);
       return reply.status(204).send();
     },
   );

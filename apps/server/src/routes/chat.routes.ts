@@ -1,7 +1,13 @@
 import { FastifyInstance } from 'fastify';
+import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '../auth/guards.js';
 import { streamChat } from '../services/chat.service.js';
 import { getRedisClient } from '../services/cache.service.js';
+import { getHomepageData } from '../services/mcp-home.service.js';
+import { summarizePOCs } from '../services/openai-summary.service.js';
+import { db } from '../db/client.js';
+import { userMcpTokens } from '../db/schema/index.js';
+import { decrypt } from '../services/encryption.service.js';
 
 const CHAT_HISTORY_TTL = 7 * 24 * 60 * 60; // 7 days
 
@@ -105,6 +111,60 @@ export async function chatRoutes(app: FastifyInstance) {
       role: request.user.role,
     };
 
+    // Fetch user's accounts and POC health for system prompt context
+    let userAccounts: Array<{ id: string; name: string }> = [];
+    let pocHealthData: Array<{ accountId: string; accountName: string; rating: string; reason: string; summary: string }> = [];
+    try {
+      const homeData = await getHomepageData(user.name, user.email);
+      userAccounts = (homeData.myAccounts ?? []).map((a: Record<string, unknown>) => ({
+        id: a.id as string,
+        name: a.name as string,
+      }));
+
+      // Fetch POC health for all user accounts (cached 1hr, fast)
+      const pocResults = await Promise.allSettled(
+        userAccounts.map(async (a) => {
+          const result = await summarizePOCs(a.id);
+          if (result?.health) {
+            return {
+              accountId: a.id,
+              accountName: a.name,
+              rating: result.health.rating,
+              reason: result.health.reason,
+              summary: result.summary ?? '',
+            };
+          }
+          return null;
+        }),
+      );
+      for (const r of pocResults) {
+        if (r.status === 'fulfilled' && r.value != null) {
+          pocHealthData.push(r.value);
+        }
+      }
+    } catch {
+      // Continue without account/POC context
+    }
+
+    // Check if user has a connected support MCP token
+    let supportMcpToken: string | null = null;
+    try {
+      const tokens = await db
+        .select()
+        .from(userMcpTokens)
+        .where(and(eq(userMcpTokens.userId, request.user.id), eq(userMcpTokens.serverKey, 'support-agent-tools')))
+        .limit(1);
+
+      if (tokens.length > 0) {
+        const isExpired = tokens[0].expiresAt && tokens[0].expiresAt < new Date();
+        if (!isExpired) {
+          supportMcpToken = decrypt(tokens[0].accessTokenEncrypted);
+        }
+      }
+    } catch {
+      // Continue without support MCP
+    }
+
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -113,7 +173,7 @@ export async function chatRoutes(app: FastifyInstance) {
     });
 
     try {
-      for await (const chunk of streamChat(messages, user, pageContext)) {
+      for await (const chunk of streamChat(messages, user, pageContext, userAccounts, pocHealthData, { userId: request.user.id, supportMcpToken })) {
         reply.raw.write(chunk);
       }
     } catch (err) {

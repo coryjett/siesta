@@ -73,6 +73,14 @@ const interactionDetailRoute = createRoute({
   ),
 });
 
+const actionItemsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/action-items',
+  component: lazyRouteComponent(
+    () => import('./pages/action-items/index'),
+  ),
+});
+
 const opportunitiesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/opportunities',
@@ -108,6 +116,7 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     homeRoute,
     accountsRoute,
+    actionItemsRoute,
     accountDetailRoute,
     accountSummaryRoute,
     accountPOCStatusRoute,
