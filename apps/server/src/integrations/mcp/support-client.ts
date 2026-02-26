@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
+import { env } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 import { cachedCall } from '../../services/cache.service.js';
 import type { JsonRpcRequest, McpToolResult } from './types.js';
-
-const SUPPORT_MCP_URL = 'https://support-agent-tools.is.solo.io/mcp';
 
 // Per-user session tracking
 const userSessions = new Map<string, { sessionId: string | null; initialized: boolean; requestId: number }>();
@@ -36,7 +35,7 @@ async function initialize(userId: string, token: string): Promise<void> {
     },
   };
 
-  const response = await fetch(SUPPORT_MCP_URL, {
+  const response = await fetch(env.SUPPORT_MCP_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -112,7 +111,7 @@ async function doCallTool<T>(
     headers['Mcp-Session-Id'] = state.sessionId;
   }
 
-  const response = await fetch(SUPPORT_MCP_URL, {
+  const response = await fetch(env.SUPPORT_MCP_URL, {
     method: 'POST',
     headers,
     body: JSON.stringify(request),
@@ -170,7 +169,7 @@ export async function listSupportTools(userId: string, token: string): Promise<u
     headers['Mcp-Session-Id'] = state.sessionId;
   }
 
-  const response = await fetch(SUPPORT_MCP_URL, {
+  const response = await fetch(env.SUPPORT_MCP_URL, {
     method: 'POST',
     headers,
     body: JSON.stringify(request),

@@ -459,9 +459,9 @@ function CacheTab() {
 
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-[11px] uppercase tracking-wide text-[#6b677e] dark:text-[#858198]">{label}</p>
-      <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">{value}</p>
+      <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate" title={value}>{value}</p>
       {detail && <p className="text-[11px] text-[#6b677e] dark:text-[#858198]">{detail}</p>}
     </div>
   );

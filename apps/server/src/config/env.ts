@@ -19,6 +19,7 @@ const envSchema = z.object({
   MCP_TOKEN_URL: z.string(),
   MCP_GATEWAY_API_KEY: z.string().optional(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
+  SUPPORT_MCP_URL: z.string().default('https://support-agent-tools.is.solo.io/mcp'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().default('https://api.openai.com/v1'),
 });

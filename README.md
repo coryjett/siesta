@@ -53,43 +53,51 @@ Sales Engineering portfolio management platform powered by MCP (Model Context Pr
 ## Architecture
 
 ```
-                              siesta namespace                                            telemetry namespace
- ┌──────────┐  ┌────────────────────────────────────────────────────────────────┐  ┌──────────────────────────────┐
- │          │  │                                                                │  │                              │
- │          │  │  ┌──────────────────────────────────────────────────────────┐   │  │  ┌────────────────────────┐  │
- │  Browser ├──┼──┤               Agent Gateway (Gateway API)               │   │  │  │        Grafana         │  │
- │          │  │  │                                                          │   │  │  │  Dashboards / Explore  │  │
- └──────────┘  │  │  :443  HTTPS ── TLS termination, web traffic            │   │  │  └───┬──────────┬────────┘  │
-               │  │  :3001 HTTP ─── MCP routing (API key auth)              │   │  │      │          │           │
-               │  │  :5432 TCP ──── PostgreSQL passthrough                  │   │  │  ┌───▼───┐  ┌───▼────────┐  │
-               │  │  :6379 TCP ──── Redis passthrough                       │   │  │  │ Tempo │  │ Prometheus │  │
-               │  │  /v1/* HTTP ─── OpenAI API proxy                        │   │  │  └───▲───┘  └────────────┘  │
-               │  └──┬────────┬──────────────────────┬──────────┬───────────┘   │  │      │                      │
-               │     │        │                      │          │               │  │  ┌───┴────────────────────┐  │
-               │     │        │ MCP        OpenAI    │          │               │  │  │    OTEL Collector      │  │
-               │     │ web    │ :3001      /v1/*     │ :5432    │ :6379         │  │  │    (traces, gRPC)      │  │
-               │     ▼        ▼                      ▼          ▼               │  │  └───▲───────────────▲────┘  │
-               │  ┌────────────────────┐  ┌────────────────┐ ┌────────┐         │  │      │               │      │
-               │  │                    │  │  PostgreSQL    │ │ Redis  │         │  └──────┼───────────────┼──────┘
-               │  │  Siesta Server     │  │ (CloudNativePG)│ │ Cache  │         │        │               │
-               │  │  (Fastify + React) │  └────────────────┘ └────────┘         │ traces │        traces │
-               │  │                    │                                        │        │               │
-               │  │  ┌──────────────┐  │───────────────────────────────────────────┼─────┘               │
-               │  │  │ OTEL SDK     │  │                                        │                        │
-               │  │  │ (auto-instr.)│  │                                        │ ┌────────────────────┐  │
-               │  │  └──────────────┘  │                                        │ │  Agent Gateway     │  │
-               │  └────────────────────┘                                        │ │  OTEL export       ├──┘
-               │                                                                │ └────────────────────┘
-               │          ┌──────────────────────┐    ┌──────────────────────┐   │
-               │          │  Portfolio-Analyzer   │    │     OpenAI API       │   │
-               │          │     MCP Server        │    │    (gpt-4o-mini)     │   │
-               │          │                       │    └──────────────────────┘   │
-               │          │ Salesforce / Gong     │                              │
-               │          │ Zendesk / GitHub      │                              │
-               │          │ Gmail / Calendar      │                              │
-               │          └──────────────────────┘                               │
-               │                                                                │
-               └────────────────────────────────────────────────────────────────┘
+                                                                                          telemetry namespace
+              ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐  ┌────────────────────────┐
+                         external services                                                │                        │
+              │  ┌──────────────────────┐  ┌──────────────┐  ┌──────────────────┐   │     │  ┌──────────────────┐  │
+                 │  Portfolio-Analyzer   │  │  OpenAI API  │  │ Support Agent    │         │  │     Grafana      │  │
+              │  │     MCP Server        │  │ (gpt-4o-mini)│  │ Tools MCP Server │   │     │  │ Dashboards       │  │
+                 │                       │  └──────────────┘  └──────────────────┘         │  └──┬─────────┬────┘  │
+              │  │ Salesforce / Gong     │                                            │     │     │         │      │
+                 │ Zendesk / GitHub      │   ▲                 ▲                            │  ┌──▼──┐  ┌──▼───┐  │
+              │  │ Gmail / Calendar      │   │                 │                      │     │  │Tempo│  │Prom. │  │
+                 └──────────▲───────────┘   │                 │                            │  └──▲──┘  └──────┘  │
+              └ ─ ─ ─ ─ ─ ─┼─ ─ ─ ─ ─ ─ ─ ┼─ ─ ─ ─ ─ ─ ─ ─┼─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘     │     │               │
+                            │ MCP           │ /v1/*           │ MCP                        │  ┌──┴────────────┐  │
+                            │               │                 │                            │  │OTEL Collector │  │
+                  siesta namespace          │                 │                            │  │(traces, gRPC) │  │
+ ┌──────────┐  ┌────────────┼───────────────┼─────────────────┼───────────────────────┐     │  └──▲────────▲───┘  │
+ │          │  │  ┌─────────┴───────────────┴─────────────────┴───────────────────┐   │     │     │        │      │
+ │          │  │  │              Agent Gateway (Gateway API)                      │   │     └─────┼────────┼──────┘
+ │  Browser ├──┼──┤                                                              │   │           │        │
+ │          │  │  │  :443  HTTPS ── TLS termination, web traffic                 │   │    traces │ traces │
+ └──────────┘  │  │  :3001 HTTP ─── MCP + OpenAI routing                         │   │           │        │
+               │  │  :3002 HTTP ─── Support MCP routing                          ├───┼───────────┘        │
+               │  │  :4317 TCP ──── OTEL traces passthrough                      │   │                    │
+               │  │  :5432 TCP ──── PostgreSQL passthrough                       │   │                    │
+               │  │  :6379 TCP ──── Redis passthrough                            ├───┼────────────────────┘
+               │  └──┬───────────────────────────────────────────────────────────┘   │
+               │     │ :443                                                          │
+               │     ▼                                                               │
+               │  ┌────────────────────┐                                             │
+               │  │                    │  all traffic via AGW                        │
+               │  │  Siesta Server     ├──────────────┐                              │
+               │  │  (Fastify + React) │              │                              │
+               │  │                    │              │                              │
+               │  │  ┌──────────────┐  │              │                              │
+               │  │  │ OTEL SDK     │  │              │                              │
+               │  │  │ (auto-instr.)│  │              │                              │
+               │  │  └──────────────┘  │              │                              │
+               │  └────────────────────┘              │                              │
+               │                                      │                              │
+               │     ┌────────────────┐  ┌────────┐   │                              │
+               │     │  PostgreSQL    │  │ Redis  │◄──┘                              │
+               │     │ (CloudNativePG)│  │ Cache  │                                  │
+               │     └────────────────┘  └────────┘                                  │
+               │                                                                     │
+               └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Environment Variables
@@ -113,6 +121,7 @@ All sensitive values must be provided via `.env` file (gitignored) or environmen
 | `COOKIE_SECURE` | Force secure cookies | No (auto in production) |
 | `OPENAI_API_KEY` | OpenAI API key (enables AI features) | No |
 | `OPENAI_BASE_URL` | OpenAI API base URL | No (default: `https://api.openai.com/v1`) |
+| `SUPPORT_MCP_URL` | Support MCP server endpoint | No (default: `https://support-agent-tools.is.solo.io/mcp`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP gRPC endpoint for traces (enables tracing) | No |
 | `OTEL_SERVICE_NAME` | Service name for traces | No (default: `siesta`) |
 
@@ -135,11 +144,11 @@ kubectl apply -f k8s/secret.yaml
 kubectl apply -f k8s/configmap.yaml
 ```
 
-The `siesta-secret` must contain:
-- `DATABASE_URL` -- PostgreSQL connection string
+The `siesta-secret` must contain (see `k8s/secret.yaml.tpl` for the template):
+- `DATABASE_URL` -- PostgreSQL connection string (use `agentgateway.siesta.svc.cluster.local:5432` as host to route through AGW)
 - `SESSION_SECRET` -- Random 64-char hex string
 - `ENCRYPTION_KEY` -- Random 64-char hex string (32 bytes)
-- `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET`, `MCP_TOKEN_URL`, `MCP_AUTH_URL`, `MCP_SERVER_URL` -- Keycloak OIDC credentials
+- `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET`, `MCP_TOKEN_URL`, `MCP_AUTH_URL` -- Keycloak OIDC credentials
 - `MCP_GATEWAY_API_KEY` -- Must match the agent gateway API key secret
 - `OPENAI_API_KEY` -- OpenAI API key (optional -- enables AI features)
 
@@ -195,12 +204,16 @@ kubectl apply -f k8s/agentgateway.yaml
 ```
 
 This creates:
-- **Gateway** with 3 listeners: HTTPS/443 (web), HTTPS/3000 (MCP external), HTTP/3001 (MCP internal)
+- **Gateway** with listeners: HTTPS/443 (web), HTTPS/3000 (MCP external), HTTP/3001 (MCP internal), HTTP/3002 (Support MCP), TCP/4317 (OTEL traces), TCP/5432 (PostgreSQL), TCP/6379 (Redis)
 - **AgentgatewayBackend** for portfolio-analyzer MCP server
+- **AgentgatewayBackend** for support-agent-tools MCP server
 - **AgentgatewayBackend** for OpenAI API proxying
 - **HTTPRoute** `siesta-web` routing web traffic to siesta Service
 - **HTTPRoute** `portfolio-analyzer` routing MCP traffic to the backend
+- **HTTPRoute** `support-agent-tools` routing support MCP traffic to the backend
 - **HTTPRoute** `openai-proxy` routing `/v1/*` to OpenAI
+- **TCPRoute** `otel-traces` routing gRPC traces to OTEL Collector in telemetry namespace
+- **ExternalName Service** `otel-collector-traces` bridging to telemetry namespace
 - **AgentgatewayPolicy** with API key auth on MCP listeners only
 
 ### 6. Deploy Telemetry Stack (OTEL, Tempo, Grafana)

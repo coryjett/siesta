@@ -12,7 +12,7 @@ import { logger } from '../utils/logger.js';
 
 const SERVER_KEY = 'support-agent-tools';
 const AUTH_SERVER_URL = 'https://auth-mcp.is.solo.io';
-const SUPPORT_MCP_URL = 'https://support-agent-tools.is.solo.io/mcp';
+const SUPPORT_MCP_RESOURCE_URI = 'https://support-agent-tools.is.solo.io/mcp';
 const PKCE_COOKIE = 'siesta_support_mcp_pkce';
 
 /**
@@ -120,7 +120,7 @@ export async function supportMcpAuthRoutes(app: FastifyInstance) {
       state,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
-      resource: SUPPORT_MCP_URL,
+      resource: SUPPORT_MCP_RESOURCE_URI,
     });
 
     return reply.redirect(`${AUTH_SERVER_URL}/authorize?${params.toString()}`);
