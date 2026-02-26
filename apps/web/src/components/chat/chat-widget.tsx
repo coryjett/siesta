@@ -558,7 +558,7 @@ export default function ChatWidget() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[#dedde4] dark:border-[#2a2734] bg-[#f9f9fb] dark:bg-[#0d0c12]">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[#6b26d9] animate-pulse" />
+              <img src="/senor-bot.png" alt="Señor Bot" className="w-6 h-6 rounded-full object-cover" />
               <span className="font-semibold text-sm text-[#191726] dark:text-[#f2f2f2]">
                 Señor Bot
               </span>
@@ -716,21 +716,10 @@ export default function ChatWidget() {
       {/* Floating toggle button — always visible */}
       <button
         onClick={toggleChat}
-        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[#6b26d9] text-white shadow-lg hover:bg-[#5a1ec0] transition-all hover:scale-105 flex items-center justify-center"
+        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full shadow-lg transition-all hover:scale-105 flex items-center justify-center overflow-hidden border-2 border-[#6b26d9] dark:border-[#8249df]"
         title={isOpen ? 'Close Señor Bot' : 'Open Señor Bot'}
       >
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-        </svg>
+        <img src="/senor-bot.png" alt="Señor Bot" className="w-full h-full object-cover" />
         {!isOpen && (
           <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-white dark:border-[#0d0c12] animate-pulse" />
         )}
