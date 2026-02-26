@@ -98,6 +98,37 @@ scripts/             # Database initialization scripts
 - **Sensitive config:** MCP credentials (client ID, secret, server URL, auth URLs) have no hardcoded defaults -- they must be provided via environment variables or `.env` file. The `.env` file is in `.gitignore`.
 - **Production:** Single Docker container serves static frontend + API on port 3000. Kubernetes manifests in `k8s/`.
 
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/home` | Personal dashboard (accounts, action items, stats) |
+| GET | `/api/home/my-action-items` | AI-extracted action items for current user |
+| GET | `/api/home/upcoming-meetings` | Upcoming calendar meetings for current user |
+| GET | `/api/accounts` | List accounts (filterable) |
+| GET | `/api/accounts/:id` | Account detail |
+| GET | `/api/accounts/:id/contacts` | Account contacts |
+| GET | `/api/accounts/:id/interactions` | Account interactions |
+| GET | `/api/accounts/:id/opportunities` | Account opportunities |
+| GET | `/api/accounts/:id/issues` | Account issues |
+| GET | `/api/accounts/:id/tasks` | Account tasks |
+| GET | `/api/accounts/:id/architecture` | Architecture doc |
+| GET | `/api/accounts/:id/sentiment` | Sentiment analysis |
+| GET | `/api/accounts/:id/overview` | AI-generated account overview |
+| GET | `/api/accounts/:id/poc-summary` | POC status summary with health rating |
+| GET | `/api/accounts/:id/technical-details` | AI-generated technical details |
+| GET | `/api/accounts/:id/action-items` | AI-extracted action items |
+| GET | `/api/accounts/:id/meeting-brief?title=...` | AI-generated meeting prep brief |
+| POST | `/api/accounts/:id/email-thread-summary` | AI email thread summary |
+| GET | `/api/opportunities` | All opportunities (with account info) |
+| GET | `/api/interactions/search` | Semantic search |
+| GET | `/api/interactions/:accountId/:sourceType/:recordId` | Interaction detail |
+| GET | `/api/settings/google-status` | Google connection status |
+| POST | `/api/settings/google-config` | Save Google OAuth credentials (admin) |
+| DELETE | `/api/settings/google-config` | Remove Google OAuth credentials (admin) |
+| POST | `/auth/google/disconnect` | Disconnect Google account |
+| GET | `/api/settings/openai/status` | OpenAI integration status |
+
 ## Environment Variables
 
 All sensitive values must be provided via `.env` (gitignored) or environment variables. No secrets have hardcoded defaults.
