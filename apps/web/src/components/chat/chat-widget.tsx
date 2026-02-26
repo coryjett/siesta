@@ -560,7 +560,7 @@ export default function ChatWidget() {
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-[#6b26d9] animate-pulse" />
               <span className="font-semibold text-sm text-[#191726] dark:text-[#f2f2f2]">
-                Digital Sherpa
+                Señor Bot
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -598,7 +598,7 @@ export default function ChatWidget() {
                   </svg>
                 </div>
                 <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2]">
-                  Hi! I'm Digital Sherpa
+                  Hi! I'm Señor Bot
                 </p>
                 <p className="text-xs mt-1">
                   Ask me about your accounts, interactions, or portfolio.
@@ -717,7 +717,7 @@ export default function ChatWidget() {
       <button
         onClick={toggleChat}
         className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[#6b26d9] text-white shadow-lg hover:bg-[#5a1ec0] transition-all hover:scale-105 flex items-center justify-center"
-        title={isOpen ? 'Close Digital Sherpa' : 'Open Digital Sherpa'}
+        title={isOpen ? 'Close Señor Bot' : 'Open Señor Bot'}
       >
         <svg
           width="22"

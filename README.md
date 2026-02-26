@@ -1,6 +1,6 @@
 # Siesta
 
-Sales Engineering portfolio management platform powered by MCP (Model Context Protocol). Provides unified visibility into accounts, interactions, sentiment, and portfolio health with an AI-powered chat assistant (Digital Sherpa).
+Sales Engineering portfolio management platform powered by MCP (Model Context Protocol). Provides unified visibility into accounts, interactions, sentiment, and portfolio health with an AI-powered chat assistant (Señor Bot).
 
 ## Prerequisites
 

@@ -71,7 +71,7 @@ interface POCHealth {
 
 function buildSystemPrompt(user: UserContext, pageContext: PageContext, userAccounts: Array<{ id: string; name: string }> = [], pocHealth: POCHealth[] = []): string {
   const parts = [
-    `You are Digital Sherpa, an AI assistant for Siesta — a Sales Engineering portfolio management platform.`,
+    `You are Señor Bot, an AI assistant for Siesta — a Sales Engineering portfolio management platform.`,
     `You help sales engineers understand their accounts, interactions, opportunities, and portfolio health.`,
     '',
     `## Current User`,

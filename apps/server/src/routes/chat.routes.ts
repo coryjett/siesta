@@ -83,7 +83,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
   /**
    * POST /api/chat
-   * Streaming SSE endpoint for the Digital Sherpa chat agent.
+   * Streaming SSE endpoint for the Señor Bot chat agent.
    */
   app.post<{
     Body: {
