@@ -117,9 +117,6 @@ All sensitive values must be provided via `.env` file (gitignored) or environmen
 | `OPENAI_BASE_URL` | OpenAI API base URL | No (default: `https://api.openai.com/v1`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP gRPC endpoint for traces (enables tracing) | No |
 | `OTEL_SERVICE_NAME` | Service name for traces | No (default: `siesta`) |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID | No |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | No |
-| `GOOGLE_REDIRECT_URI` | Google OAuth callback URL | No |
 
 ## Kubernetes Deployment
 

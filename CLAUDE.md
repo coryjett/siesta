@@ -149,11 +149,6 @@ REDIS_URL=redis://localhost:6379
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_BASE_URL=https://api.openai.com/v1  # or Agent Gateway URL in production
 
-# Google OAuth (optional -- enables Calendar/Gmail integration)
-GOOGLE_CLIENT_ID=<google-client-id>
-GOOGLE_CLIENT_SECRET=<google-client-secret>
-GOOGLE_REDIRECT_URI=https://siesta.cjett.net/auth/google/callback
-
 # OpenTelemetry (optional -- enables distributed tracing)
 OTEL_EXPORTER_OTLP_ENDPOINT=http://opentelemetry-collector-traces.telemetry.svc.cluster.local:4317
 OTEL_SERVICE_NAME=siesta
