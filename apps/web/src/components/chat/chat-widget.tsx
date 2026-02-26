@@ -714,16 +714,18 @@ export default function ChatWidget() {
       )}
 
       {/* Floating toggle button — always visible */}
-      <button
-        onClick={toggleChat}
-        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full shadow-lg transition-all hover:scale-105 flex items-center justify-center overflow-hidden border-2 border-[#6b26d9] dark:border-[#8249df]"
-        title={isOpen ? 'Close Señor Bot' : 'Open Señor Bot'}
-      >
-        <img src="/senor-bot.png" alt="Señor Bot" className="w-full h-full object-cover" />
+      <div className="fixed bottom-6 right-6 z-50">
+        <button
+          onClick={toggleChat}
+          className="w-[54px] h-[54px] rounded-full shadow-lg transition-all hover:scale-105 flex items-center justify-center overflow-hidden border-2 border-[#6b26d9] dark:border-[#8249df]"
+          title={isOpen ? 'Close Señor Bot' : 'Open Señor Bot'}
+        >
+          <img src="/senor-bot.png" alt="Señor Bot" className="w-full h-full object-cover scale-[2.0]" />
+        </button>
         {!isOpen && (
-          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-white dark:border-[#0d0c12] animate-pulse" />
+          <span className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-green-400 border-2 border-white dark:border-[#0d0c12] animate-pulse pointer-events-none" />
         )}
-      </button>
+      </div>
     </>
   );
 }
