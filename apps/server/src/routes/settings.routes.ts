@@ -258,7 +258,7 @@ export async function settingsRoutes(app: FastifyInstance) {
 
         const start = Date.now();
         const response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model: env.OPENAI_MODEL,
           messages: [{ role: 'user', content: 'ping' }],
           max_tokens: 1,
         });

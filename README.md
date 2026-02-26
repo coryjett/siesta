@@ -58,7 +58,7 @@ Sales Engineering portfolio management platform powered by MCP (Model Context Pr
                          external services                                                │                        │
               │  ┌──────────────────────┐  ┌──────────────┐  ┌──────────────────┐   │     │  ┌──────────────────┐  │
                  │  Portfolio-Analyzer   │  │  OpenAI API  │  │ Support Agent    │         │  │     Grafana      │  │
-              │  │     MCP Server        │  │ (gpt-4o-mini)│  │ Tools MCP Server │   │     │  │ Dashboards       │  │
+              │  │     MCP Server        │  │ (gpt-4o)│  │ Tools MCP Server │   │     │  │ Dashboards       │  │
                  │                       │  └──────────────┘  └──────────────────┘         │  └──┬─────────┬────┘  │
               │  │ Salesforce / Gong     │                                            │     │     │         │      │
                  │ Zendesk / GitHub      │   ▲                 ▲                            │  ┌──▼──┐  ┌──▼───┐  │
@@ -121,6 +121,7 @@ All sensitive values must be provided via `.env` file (gitignored) or environmen
 | `COOKIE_SECURE` | Force secure cookies | No (auto in production) |
 | `OPENAI_API_KEY` | OpenAI API key (enables AI features) | No |
 | `OPENAI_BASE_URL` | OpenAI API base URL | No (default: `https://api.openai.com/v1`) |
+| `OPENAI_MODEL` | OpenAI model name | No (default: `gpt-4o`) |
 | `SUPPORT_MCP_URL` | Support MCP server endpoint | No (default: `https://support-agent-tools.is.solo.io/mcp`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP gRPC endpoint for traces (enables tracing) | No |
 | `OTEL_SERVICE_NAME` | Service name for traces | No (default: `siesta`) |

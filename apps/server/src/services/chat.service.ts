@@ -127,7 +127,7 @@ export async function* streamChat(
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
     const stream = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: env.OPENAI_MODEL,
       messages: openaiMessages,
       tools: openaiTools,
       stream: true,

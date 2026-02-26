@@ -64,7 +64,7 @@ export async function summarizeEmailThread(
         .join('\n\n');
 
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL,
         messages: [
           {
             role: 'system',
@@ -195,7 +195,7 @@ export async function summarizeAccount(
       }
 
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL,
         messages: [
           {
             role: 'system',
@@ -326,7 +326,7 @@ export async function extractActionItems(
       );
 
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL,
         messages: [
           {
             role: 'system',
@@ -458,7 +458,7 @@ export async function summarizeTechnicalDetails(
       logger.info({ accountId, calls: callTitles.length, emails: emailsArr.length, hasArchDoc: !!archContent }, '[tech-details] Sending to OpenAI');
 
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL,
         messages: [
           {
             role: 'system',
@@ -548,7 +548,7 @@ export async function generateGongCallBrief(
       }
 
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL,
         messages: [
           {
             role: 'system',
@@ -641,7 +641,7 @@ export async function summarizePOCs(
       if (sections.length === 0) return null;
 
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL,
         messages: [
           {
             role: 'system',
@@ -811,7 +811,7 @@ export async function generateMeetingBrief(
         : `Meeting: "${meetingTitle}"\nAccount: ${(account as Record<string, unknown>).name}`;
 
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL,
         messages: [
           {
             role: 'system',
