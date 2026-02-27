@@ -12,7 +12,7 @@ import {
   getAccountSentiment,
 } from '../services/mcp-accounts.service.js';
 import { getInteractionDetail } from '../services/mcp-interactions.service.js';
-import { summarizeEmailThread, summarizeAccount, summarizeTechnicalDetails, generateGongCallBrief, summarizePOCs, generateMeetingBrief } from '../services/openai-summary.service.js';
+import { summarizeEmailThread, summarizeAccount, summarizeTechnicalDetails, generateGongCallBrief, summarizePOCs, generateMeetingBrief, generateContactInsights } from '../services/openai-summary.service.js';
 import { getActionItemsWithStatus, completeActionItem, uncompleteActionItem } from '../services/action-items.service.js';
 import { invalidateCache } from '../services/cache.service.js';
 import { logger } from '../utils/logger.js';
@@ -260,6 +260,18 @@ export async function accountsRoutes(app: FastifyInstance) {
       }
       const brief = await generateMeetingBrief(request.params.id, title, date);
       return reply.send({ brief });
+    },
+  );
+
+  /**
+   * GET /api/accounts/:id/contact-insights
+   * AI-extracted personal insights about contacts from Gong call transcripts.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/accounts/:id/contact-insights',
+    async (request, reply) => {
+      const insights = await generateContactInsights(request.params.id);
+      return reply.send({ insights });
     },
   );
 

@@ -3,7 +3,9 @@ import { requireAuth } from '../auth/guards.js';
 import { getHomepageData } from '../services/mcp-home.service.js';
 import { getUserActionItemsAcrossAccounts } from '../services/action-items.service.js';
 import { getUpcomingMeetings } from '../services/meetings.service.js';
-import { cachedCall } from '../services/cache.service.js';
+import { generateInsights } from '../services/openai-summary.service.js';
+import { listAccounts } from '../services/mcp-accounts.service.js';
+import { cachedCall, getCache } from '../services/cache.service.js';
 import { logger } from '../utils/logger.js';
 
 export async function homeRoutes(app: FastifyInstance) {
@@ -75,5 +77,47 @@ export async function homeRoutes(app: FastifyInstance) {
 
     const meetings = await getUpcomingMeetings(userName, userEmail, accounts);
     return reply.send({ meetings });
+  });
+
+  /**
+   * GET /api/insights
+   * AI-generated cross-account insights: technology patterns, conversation
+   * trends, and cross-team observations. Cached 4 hours per user.
+   */
+  app.get('/api/insights', async (request, reply) => {
+    const userName = request.user.name;
+    const userEmail = request.user.email;
+    const userId = request.user.id;
+    const emptyResponse = { technologyPatterns: [], conversationTrends: [], crossTeamInsights: [] };
+
+    try {
+      // Fast path: return cached insights without fetching account data
+      const cached = await getCache<Record<string, unknown>>(`openai:insights:${userId}`);
+      if (cached) {
+        return reply.send(cached);
+      }
+
+      // Cache miss: fetch account data in parallel, then generate
+      const [data, allAccountsRaw] = await Promise.all([
+        getHomepageData(userName, userEmail),
+        listAccounts(),
+      ]);
+
+      const userAccounts = (data.myAccounts ?? []).map((a: Record<string, unknown>) => ({
+        id: a.id as string,
+        name: a.name as string,
+      }));
+
+      const allAccounts = (allAccountsRaw as Array<Record<string, unknown>>).map((a) => ({
+        id: a.id as string,
+        name: a.name as string,
+      }));
+
+      const result = await generateInsights(userId, userAccounts, allAccounts);
+      return reply.send(result ?? emptyResponse);
+    } catch (err) {
+      logger.error({ err, userId }, '[insights] Failed to generate insights');
+      return reply.send(emptyResponse);
+    }
   });
 }

@@ -20,6 +20,10 @@ import { interactionsRoutes } from './routes/interactions.routes.js';
 import { portfolioRoutes } from './routes/portfolio.routes.js';
 import { supportMcpAuthRoutes } from './routes/support-mcp-auth.routes.js';
 import { chatRoutes } from './routes/chat.routes.js';
+import { toolsRoutes } from './routes/tools.routes.js';
+import { resourcesRoutes } from './routes/resources.routes.js';
+import { pricingRoutes } from './routes/pricing.routes.js';
+import { bugReportRoutes } from './routes/bug-report.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -111,6 +115,10 @@ export async function buildApp() {
   await app.register(portfolioRoutes);
   await app.register(supportMcpAuthRoutes);
   await app.register(chatRoutes);
+  await app.register(toolsRoutes);
+  await app.register(resourcesRoutes);
+  await app.register(pricingRoutes);
+  await app.register(bugReportRoutes);
 
   // Serve static frontend in production
   if (env.NODE_ENV === 'production') {

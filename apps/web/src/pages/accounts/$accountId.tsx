@@ -14,8 +14,9 @@ import {
   useAccountPOCSummary,
   useCompleteActionItem,
   useUncompleteActionItem,
+  useContactInsights,
 } from '../../api/queries/accounts';
-import type { ActionItem } from '../../api/queries/accounts';
+import type { ActionItem, ContactInsight } from '../../api/queries/accounts';
 import { useAuth } from '../../contexts/auth-context';
 import { useInteractionDetail } from '../../api/queries/interactions';
 import { PageLoading } from '../../components/common/loading';
@@ -844,19 +845,53 @@ function InteractionSection({
   );
 }
 
+const INSIGHT_LABELS: Record<string, string> = {
+  location: 'Location',
+  interests: 'Interests',
+  family: 'Family',
+  hobbies: 'Hobbies',
+  background: 'Background',
+  travel: 'Travel',
+  other: 'Other',
+};
+
 function ContactsSection({
   contacts,
   isLoading,
   error,
+  insights,
 }: {
   contacts: Contact[] | undefined;
   isLoading: boolean;
   error: Error | null;
+  insights?: ContactInsight[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedInsights, setExpandedInsights] = useState<Set<string>>(new Set());
   const allContacts = contacts ?? [];
   const hasMore = allContacts.length > PREVIEW_COUNT;
   const visible = expanded ? allContacts : allContacts.slice(0, PREVIEW_COUNT);
+
+  const insightMap = useMemo(() => {
+    if (!insights) return new Map<string, ContactInsight>();
+    const map = new Map<string, ContactInsight>();
+    for (const insight of insights) {
+      map.set(insight.contactName.toLowerCase(), insight);
+    }
+    return map;
+  }, [insights]);
+
+  const toggleInsight = (contactName: string) => {
+    setExpandedInsights((prev) => {
+      const next = new Set(prev);
+      if (next.has(contactName)) {
+        next.delete(contactName);
+      } else {
+        next.add(contactName);
+      }
+      return next;
+    });
+  };
 
   return (
     <Card
@@ -880,55 +915,91 @@ function ContactsSection({
       ) : (
         <>
           <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
-            {visible.map((contact) => (
-              <div key={contact.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20">
-                  <span className="text-sm font-semibold text-[#6b26d9] dark:text-[#8249df]">
-                    {(contact.name ?? '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
-                    {contact.name ?? 'Unknown'}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                    {contact.title && <span>{contact.title}</span>}
-                    {contact.title && contact.email && (
-                      <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                    )}
-                    {contact.email && (
-                      <a
-                        href={`mailto:${contact.email}`}
-                        className="text-[#6b26d9] dark:text-[#8249df] hover:underline truncate"
-                      >
-                        {contact.email}
-                      </a>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                    {contact.gongCallCount > 0 && (
-                      <span>{contact.gongCallCount} call{contact.gongCallCount !== 1 ? 's' : ''}</span>
-                    )}
-                    {contact.emailCount > 0 && (
-                      <>
+            {visible.map((contact) => {
+              const insight = insightMap.get((contact.name ?? '').toLowerCase());
+              const isInsightExpanded = expandedInsights.has(contact.name ?? '');
+              const infoEntries = insight
+                ? Object.entries(insight.personalInfo).filter(([, v]) => v)
+                : [];
+
+              return (
+                <div key={contact.id} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20">
+                      <span className="text-sm font-semibold text-[#6b26d9] dark:text-[#8249df]">
+                        {(contact.name ?? '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
+                        {contact.name ?? 'Unknown'}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
+                        {contact.title && <span>{contact.title}</span>}
+                        {contact.title && contact.email && (
+                          <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                        )}
+                        {contact.email && (
+                          <a
+                            href={`mailto:${contact.email}`}
+                            className="text-[#6b26d9] dark:text-[#8249df] hover:underline truncate"
+                          >
+                            {contact.email}
+                          </a>
+                        )}
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
                         {contact.gongCallCount > 0 && (
-                          <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                          <span>{contact.gongCallCount} call{contact.gongCallCount !== 1 ? 's' : ''}</span>
                         )}
-                        <span>{contact.emailCount} email{contact.emailCount !== 1 ? 's' : ''}</span>
-                      </>
-                    )}
-                    {contact.lastInteractionDate && (
-                      <>
-                        {(contact.gongCallCount > 0 || contact.emailCount > 0) && (
-                          <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                        {contact.emailCount > 0 && (
+                          <>
+                            {contact.gongCallCount > 0 && (
+                              <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                            )}
+                            <span>{contact.emailCount} email{contact.emailCount !== 1 ? 's' : ''}</span>
+                          </>
                         )}
-                        <span>Last: {formatDate(contact.lastInteractionDate)}</span>
-                      </>
-                    )}
+                        {contact.lastInteractionDate && (
+                          <>
+                            {(contact.gongCallCount > 0 || contact.emailCount > 0) && (
+                              <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                            )}
+                            <span>Last: {formatDate(contact.lastInteractionDate)}</span>
+                          </>
+                        )}
+                      </div>
+                      {infoEntries.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleInsight(contact.name ?? '')}
+                          className="mt-1 text-xs text-[#6b26d9] dark:text-[#8249df] hover:underline"
+                        >
+                          {isInsightExpanded ? 'Hide personal notes' : 'Personal notes'}
+                        </button>
+                      )}
+                    </div>
                   </div>
+                  {isInsightExpanded && insight && infoEntries.length > 0 && (
+                    <div className="mt-2 ml-12 rounded-lg bg-[#f8f7fa] dark:bg-[#1e1b2e] p-3 text-xs">
+                      <div className="space-y-1.5">
+                        {infoEntries.map(([key, value]) => (
+                          <div key={key} className="flex gap-2">
+                            <span className="font-medium text-[#191726] dark:text-[#f2f2f2] shrink-0">
+                              {INSIGHT_LABELS[key] ?? key}:
+                            </span>
+                            <span className="text-[#6b677e] dark:text-[#858198]">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[10px] text-[#9e9ab0] dark:text-[#6b677e]">
+                        from {insight.sourceCallTitles.length} call{insight.sourceCallTitles.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {hasMore && (
             <button
@@ -1163,6 +1234,7 @@ export default function AccountDetailPage() {
   const { data: overviewData, isLoading: overviewLoading, error: overviewError } = useAccountOverview(accountId);
   const { data: actionItemsData, isLoading: actionItemsLoading, error: actionItemsError } = useAccountActionItems(accountId);
   const { data: contacts, isLoading: contactsLoading, error: contactsError } = useAccountContacts(accountId);
+  const { data: contactInsightsData } = useContactInsights(accountId);
   const { data: techDetailsData, isLoading: techDetailsLoading, error: techDetailsError } = useAccountTechnicalDetails(accountId);
   const { data: pocData, isLoading: pocLoading, error: pocError } = useAccountPOCSummary(accountId);
 
@@ -1378,7 +1450,21 @@ export default function AccountDetailPage() {
                             {item.action}
                           </p>
                           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                            <span>{item.source}</span>
+                            {item.sourceType && item.recordId ? (
+                              <button
+                                type="button"
+                                onClick={() => navigate({
+                                  to: '/interactions/$accountId/$sourceType/$recordId',
+                                  params: { accountId: accountId!, sourceType: item.sourceType, recordId: item.recordId! },
+                                  search: { title: item.source },
+                                } as never)}
+                                className="text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
+                              >
+                                {item.source}
+                              </button>
+                            ) : (
+                              <span>{item.source}</span>
+                            )}
                             <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
                             <span>{formatDateTime(item.date)}</span>
                             {item.owner && (
@@ -1422,6 +1508,7 @@ export default function AccountDetailPage() {
           contacts={contacts}
           isLoading={contactsLoading}
           error={contactsError}
+          insights={contactInsightsData?.insights}
         />
         <Card
           title={

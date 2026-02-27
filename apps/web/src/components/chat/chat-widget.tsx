@@ -108,6 +108,7 @@ export default function ChatWidget() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeTools, setActiveTools] = useState<string[]>([]);
+  const [hasUnread, setHasUnread] = useState(false);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const historyIndex = useRef(-1);
   const draftInput = useRef('');
@@ -130,11 +131,22 @@ export default function ChatWidget() {
         setAnimating(false);
       }, currentAnim.duration);
     } else {
-      // Opening — pick a new random animation
+      // Opening — pick a new random animation, clear unread flag
       const anim = pickRandomAnimation();
       setCurrentAnim(anim);
       setIsOpen(true);
       setAnimating(true);
+      setHasUnread(false);
+      fetch('/api/chat/unread', { method: 'DELETE', credentials: 'include' }).catch(() => {});
+      // Reload chat history to pick up server-injected messages
+      fetch('/api/chat/history', { credentials: 'include' })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.messages && data.messages.length > 0) {
+            setMessages(data.messages);
+          }
+        })
+        .catch(() => {});
       // Small delay so the closed state renders first, then transition to open
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -216,6 +228,24 @@ export default function ChatWidget() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Poll for unread notifications when chat is closed
+  useEffect(() => {
+    if (isOpen) return;
+
+    const poll = () => {
+      fetch('/api/chat/unread', { credentials: 'include' })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.unread) setHasUnread(true);
+        })
+        .catch(() => {});
+    };
+
+    poll(); // check immediately
+    const interval = setInterval(poll, 30_000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   // Focus input when panel opens
   useEffect(() => {
@@ -723,7 +753,13 @@ export default function ChatWidget() {
           <img src="/senor-bot.png" alt="Señor Bot" className="w-full h-full object-cover scale-[2.0]" />
         </button>
         {!isOpen && (
-          <span className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-green-400 border-2 border-white dark:border-[#0d0c12] animate-pulse pointer-events-none" />
+          hasUnread ? (
+            <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 rounded-full bg-red-500 border-2 border-white dark:border-[#0d0c12] pointer-events-none flex items-center justify-center">
+              <span className="w-1.5 h-1.5 rounded-full bg-white" />
+            </span>
+          ) : (
+            <span className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-green-400 border-2 border-white dark:border-[#0d0c12] animate-pulse pointer-events-none" />
+          )
         )}
       </div>
     </>

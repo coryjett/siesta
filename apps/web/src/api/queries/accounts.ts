@@ -173,6 +173,8 @@ export interface ActionItem {
   id: string;
   action: string;
   source: string;
+  sourceType: string;
+  recordId: string | null;
   date: string;
   owner: string | null;
   status: 'open' | 'done';
@@ -210,6 +212,36 @@ export function useMeetingBrief(accountId: string | undefined, title: string | u
     },
     enabled: !!accountId && !!title,
     staleTime: 60 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export interface ContactPersonalInfo {
+  location?: string;
+  interests?: string;
+  family?: string;
+  hobbies?: string;
+  background?: string;
+  travel?: string;
+  other?: string;
+}
+
+export interface ContactInsight {
+  contactName: string;
+  personalInfo: ContactPersonalInfo;
+  sourceCallTitles: string[];
+}
+
+export interface ContactInsightsResponse {
+  insights: ContactInsight[];
+}
+
+export function useContactInsights(id: string | undefined) {
+  return useQuery<ContactInsightsResponse>({
+    queryKey: ['accounts', id, 'contact-insights'],
+    queryFn: () => api.get<ContactInsightsResponse>(`/accounts/${id}/contact-insights`),
+    enabled: !!id,
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours — cached indefinitely on server
     retry: 1,
   });
 }

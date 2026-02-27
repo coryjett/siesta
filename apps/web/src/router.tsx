@@ -105,6 +105,32 @@ const meetingBriefRoute = createRoute({
   ),
 });
 
+const insightsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/insights',
+  component: lazyRouteComponent(() => import('./pages/insights/index')),
+});
+
+const toolsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/tools',
+  component: lazyRouteComponent(() => import('./pages/tools/index')),
+});
+
+const ambientCalculatorRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/tools/ambient-calculator',
+  component: lazyRouteComponent(
+    () => import('./pages/tools/ambient-calculator'),
+  ),
+});
+
+const resourcesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/resources',
+  component: lazyRouteComponent(() => import('./pages/resources/index')),
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings',
@@ -125,6 +151,10 @@ const routeTree = rootRoute.addChildren([
     opportunitiesRoute,
     opportunityDetailRoute,
     meetingBriefRoute,
+    insightsRoute,
+    toolsRoute,
+    ambientCalculatorRoute,
+    resourcesRoute,
     settingsRoute,
   ]),
 ]);

@@ -264,6 +264,13 @@ function formatCpu(seconds: number): string {
   return `${minutes}m ${secs}s`;
 }
 
+const PHASE_LABELS: Record<string, string> = {
+  'gong-briefs': 'Gong Briefs',
+  'contact-insights': 'Contact Insights',
+  'poc-summaries': 'POC Summaries',
+  'done': 'Done',
+};
+
 function WarmupStatusCard() {
   const { data: warmup } = useWarmupStatus();
 
@@ -278,7 +285,7 @@ function WarmupStatusCard() {
   const briefsProcessed = warmup.generated + warmup.skipped;
 
   return (
-    <Card title="Gong Brief Warmup">
+    <Card title="Cache Warmup">
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <span
@@ -291,7 +298,8 @@ function WarmupStatusCard() {
           </span>
           {isWarming && (
             <span className="text-xs text-[#6b677e] dark:text-[#858198]">
-              {warmup.processedAccounts} / {warmup.totalAccounts} accounts ({progress}%)
+              {PHASE_LABELS[warmup.phase] ?? warmup.phase}
+              {warmup.phase === 'gong-briefs' && ` — ${warmup.processedAccounts} / ${warmup.totalAccounts} accounts (${progress}%)`}
             </span>
           )}
           {isComplete && warmup.completedAt && (
@@ -301,7 +309,7 @@ function WarmupStatusCard() {
           )}
         </div>
 
-        {isWarming && (
+        {isWarming && warmup.phase === 'gong-briefs' && (
           <div className="h-2 w-full rounded-full bg-[#eeedf3] dark:bg-[#1e1b29] overflow-hidden">
             <div
               className="h-full rounded-full bg-amber-500 transition-all duration-500"
@@ -316,12 +324,22 @@ function WarmupStatusCard() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-3">
           <Metric label="Accounts" value={`${warmup.processedAccounts} / ${warmup.totalAccounts}`} />
           <Metric label="Calls Found" value={warmup.totalCalls.toLocaleString()} />
-          <Metric label="Briefs Generated" value={warmup.generated.toLocaleString()} detail={isWarming && warmup.totalCalls > 0 ? `${warmup.totalCalls - briefsProcessed} remaining` : undefined} />
+          <Metric label="Briefs Generated" value={warmup.generated.toLocaleString()} detail={isWarming && warmup.phase === 'gong-briefs' && warmup.totalCalls > 0 ? `${warmup.totalCalls - briefsProcessed} remaining` : undefined} />
           <Metric label="Skipped" value={warmup.skipped.toLocaleString()} detail="cache hits or errors" />
+          <Metric label="Contact Insights" value={warmup.contactInsightsWarmed.toLocaleString()} detail="accounts with insights" />
+          <Metric label="POC Summaries" value={warmup.pocSummariesWarmed.toLocaleString()} detail="accounts with POCs" />
         </div>
+
+        {isComplete && warmup.refreshCount > 0 && (
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-[#dedde4] dark:border-[#2a2734] pt-4 sm:grid-cols-3">
+            <Metric label="Refresh Cycles" value={warmup.refreshCount.toLocaleString()} detail="every 30 min" />
+            <Metric label="Last Refresh" value={warmup.lastRefreshAt ? new Date(warmup.lastRefreshAt).toLocaleTimeString() : 'N/A'} />
+            <Metric label="New Calls Found" value={warmup.lastRefreshNewCalls.toLocaleString()} detail="in last refresh" />
+          </div>
+        )}
       </div>
     </Card>
   );

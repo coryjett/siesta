@@ -79,14 +79,20 @@ export function useCacheStats() {
 
 export interface WarmupStatus {
   status: 'idle' | 'warming' | 'complete' | 'error';
+  phase: 'gong-briefs' | 'contact-insights' | 'poc-summaries' | 'done';
   totalAccounts: number;
   processedAccounts: number;
   totalCalls: number;
   generated: number;
   skipped: number;
+  contactInsightsWarmed: number;
+  pocSummariesWarmed: number;
   startedAt: string | null;
   completedAt: string | null;
   error: string | null;
+  refreshCount: number;
+  lastRefreshAt: string | null;
+  lastRefreshNewCalls: number;
 }
 
 export function useWarmupStatus() {

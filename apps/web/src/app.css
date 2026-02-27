@@ -90,8 +90,13 @@
 }
 
 /* Base body styles */
-body {
+html, body {
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #f9f9fb;
+}
+
+html.dark, html.dark body {
+  background-color: #0d0c12;
 }

@@ -1,13 +1,14 @@
 import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { env } from '../config/env.js';
-import { cachedCall } from './cache.service.js';
+import { cachedCall, getCache, invalidateCache } from './cache.service.js';
 import { logger } from '../utils/logger.js';
 import { callTool } from '../integrations/mcp/client.js';
 import { hashActionItem } from '../utils/hash.js';
 import {
   listAccounts,
   getAccount,
+  getAccountContacts,
   getAccountOpportunities,
   getAccountInteractions,
   getAccountIssues,
@@ -104,7 +105,7 @@ export async function summarizeAccount(
 
   const cacheKey = `openai:account-overview:${accountId}`;
 
-  return cachedCall<string | null>(cacheKey, 3600, async () => {
+  return cachedCall<string | null>(cacheKey, 0, async () => {
     try {
       // Gather all data in parallel — each call is individually cached via MCP cache
       const [account, opportunities, interactions, issues, tasks] =
@@ -223,6 +224,8 @@ export interface ActionItem {
   id: string;
   action: string;
   source: string;
+  sourceType: string;
+  recordId: string | null;
   date: string;
   owner: string | null;
   status: 'open' | 'done';
@@ -246,9 +249,8 @@ export async function extractActionItems(
 
   const cacheKey = `openai:action-items:${accountId}`;
 
-  // 7-day TTL to minimize re-extraction and avoid duplicate action items
-  // from OpenAI rephrasing the same items differently on each call.
-  return cachedCall<ActionItem[]>(cacheKey, 604800, async () => {
+  // Indefinite TTL — invalidated when new Gong calls are discovered by periodic refresh.
+  return cachedCall<ActionItem[]>(cacheKey, 0, async () => {
     try {
       // Fetch calls and emails separately so we can use full briefs for calls
       const [calls, emails] = await Promise.all([
@@ -269,24 +271,36 @@ export async function extractActionItems(
 
       const sections: string[] = [];
 
-      // Gong calls — use full AI-generated briefs (already cached if warmed)
+      // Gong calls — use briefs + full transcripts for deeper action item extraction
       const callTitles = [...new Set(
         callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
       )].slice(0, 10);
 
       if (callTitles.length > 0) {
-        const gongBriefs = await Promise.all(
+        const gongData = await Promise.all(
           callTitles.map(async (title) => {
-            const callDate = callsArr.find((c) => String(c.title ?? '') === title)?.date ?? '';
-            const brief = await generateGongCallBrief(accountId, title).catch(() => null);
-            return brief
-              ? `--- Call: "${title}" (${callDate}) ---\n${brief}`
-              : null;
+            const call = callsArr.find((c) => String(c.title ?? '') === title);
+            const callDate = String(call?.date ?? '');
+            const callRecordId = String(call?.id ?? call?.record_id ?? '');
+            const [brief, transcript] = await Promise.all([
+              generateGongCallBrief(accountId, title).catch(() => null),
+              fetchFullGongTranscript(accountId, title).catch(() => null),
+            ]);
+            if (!brief && !transcript) return null;
+            const parts: string[] = [`--- Call [sourceType=gong_call, recordId=${callRecordId}]: "${title}" (${callDate}) ---`];
+            if (brief) parts.push(`Brief:\n${brief}`);
+            if (transcript?.transcript) {
+              const text = transcript.transcript.length > 3000
+                ? transcript.transcript.slice(0, 3000) + '\n[...truncated]'
+                : transcript.transcript;
+              parts.push(`Transcript:\n${text}`);
+            }
+            return parts.join('\n');
           }),
         );
-        const validBriefs = gongBriefs.filter(Boolean);
-        if (validBriefs.length > 0) {
-          sections.push(validBriefs.join('\n\n'));
+        const validCalls = gongData.filter(Boolean);
+        if (validCalls.length > 0) {
+          sections.push(validCalls.join('\n\n'));
         }
       }
 
@@ -305,12 +319,12 @@ export async function extractActionItems(
                 const participants = ((detail?.participants ?? []) as Array<{ name: string; email: string | null }>)
                   .map((p) => p.name || p.email || 'unknown')
                   .join(', ');
-                return `--- Email: "${title}" (${date}) ---\nParticipants: ${participants || 'unknown'}\n\n${content}`;
+                return `--- Email [sourceType=gmail_email, recordId=${recordId}]: "${title}" (${date}) ---\nParticipants: ${participants || 'unknown'}\n\n${content}`;
               }
             } catch { /* skip */ }
             // Fallback to preview
             const preview = String(i.preview ?? '');
-            return preview ? `--- Email: "${title}" (${date}) ---\n${preview}` : null;
+            return preview ? `--- Email [sourceType=gmail_email, recordId=${recordId}]: "${title}" (${date}) ---\n${preview}` : null;
           }),
         );
         const validEmails = emailDetails.filter(Boolean);
@@ -332,7 +346,7 @@ export async function extractActionItems(
           {
             role: 'system',
             content:
-              'You are a sales engineering assistant. Given Gong call briefs and email threads from customer interactions, extract specific follow-up items and action items that our team needs to act on.\n\nFocus on:\n- Things our team committed to doing (deliverables, demos, docs, follow-up calls)\n- Customer requests or asks that need a response\n- Next steps agreed upon in calls or emails\n- Open questions that need answers\n- Deadlines or time-sensitive commitments\n\nReturn a JSON array of action items. Each item must have:\n- "action": concise description of what needs to be done\n- "source": the title of the call or email where this was identified\n- "date": the date of that interaction (ISO format)\n- "owner": who on our team is responsible (name if mentioned, null if unclear)\n- "status": always "open"\n\nOnly include concrete, actionable items — not vague observations. Prioritize items from the most recent interactions. If no action items are found, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
+              'You are a sales engineering assistant. Given Gong call briefs, full call transcripts, and email threads from customer interactions, extract specific follow-up items and action items that our team needs to act on.\n\nFocus on:\n- Things our team committed to doing (deliverables, demos, docs, follow-up calls)\n- Customer requests or asks that need a response\n- Next steps agreed upon in calls or emails\n- Open questions that need answers\n- Deadlines or time-sensitive commitments\n- Verbal commitments or promises made during calls (use the full transcript for these)\n\nEach interaction is tagged with [sourceType=..., recordId=...] in its header. You MUST include these exact values in your response for each action item.\n\nReturn a JSON array of action items. Each item must have:\n- "action": concise description of what needs to be done\n- "source": the title of the call or email where this was identified\n- "sourceType": the sourceType tag from the interaction header (e.g. "gong_call", "gmail_email")\n- "recordId": the recordId tag from the interaction header\n- "date": the date of that interaction (ISO format)\n- "owner": who on our team is responsible (name if mentioned, null if unclear)\n- "status": always "open"\n\nOnly include concrete, actionable items — not vague observations. Prioritize items from the most recent interactions. Use the full transcripts to catch action items that may have been missed in the briefs. If no action items are found, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
           },
           {
             role: 'user',
@@ -340,7 +354,7 @@ export async function extractActionItems(
           },
         ],
         temperature: 0.2,
-        max_tokens: 1000,
+        max_tokens: 2000,
       });
 
       const raw = response.choices[0]?.message?.content?.trim() ?? '[]';
@@ -354,10 +368,14 @@ export async function extractActionItems(
         const action = String(item.action ?? '');
         const source = String(item.source ?? '');
         const date = String(item.date ?? '');
+        const sourceType = String(item.sourceType ?? '');
+        const recordId = item.recordId ? String(item.recordId) : null;
         return {
-          id: hashActionItem(accountId, action, source, date),
+          id: hashActionItem(accountId, action, source, date, sourceType, recordId ?? undefined),
           action,
           source,
+          sourceType,
+          recordId,
           date,
           owner: item.owner ? String(item.owner) : null,
           status: 'open' as const,
@@ -387,7 +405,7 @@ export async function summarizeTechnicalDetails(
 
   const cacheKey = `openai:tech-details:${accountId}`;
 
-  return cachedCall<string | null>(cacheKey, 3600, async () => {
+  return cachedCall<string | null>(cacheKey, 0, async () => {
     try {
       // Fetch calls, emails, and architecture doc in parallel
       const [calls, emails, architectureDoc] = await Promise.all([
@@ -485,10 +503,74 @@ export async function summarizeTechnicalDetails(
 }
 
 /**
- * Generate a full Gong call brief by fetching all available chunks
- * from semantic search (summary + transcript) and synthesizing via OpenAI.
- * The MCP vector store truncates call briefs at ~500 chars, cutting off
- * Key Highlights, Action Items, and Next Steps. This reconstructs them.
+ * Fetch all available transcript chunks for a Gong call from the MCP vector
+ * store and concatenate them into a full transcript. Cached indefinitely
+ * since Gong data is immutable.
+ */
+export interface GongTranscript {
+  title: string;
+  summary: string | null;
+  transcript: string;
+  chunkCount: number;
+}
+
+export async function fetchFullGongTranscript(
+  accountId: string,
+  title: string,
+): Promise<GongTranscript | null> {
+  const hash = crypto.createHash('md5').update(`${accountId}:${title}`).digest('hex');
+  const cacheKey = `gong:transcript:${hash}`;
+
+  return cachedCall<GongTranscript | null>(cacheKey, 0, async () => {
+    try {
+      const searchResult = await callTool<Record<string, unknown>>('get_account_interactions', {
+        company_id: accountId,
+        query: title,
+        source_types: ['gong_call'],
+        limit: 100,
+      });
+
+      const results = ((searchResult.results ?? []) as Array<Record<string, unknown>>)
+        .filter((r) => String(r.title ?? '') === title);
+
+      if (results.length === 0) return null;
+
+      const summaryChunks: string[] = [];
+      const transcriptChunks: string[] = [];
+
+      for (const r of results) {
+        const content = String(r.content ?? '');
+        if (!content) continue;
+        if (content.trimStart().toLowerCase().startsWith('summary')) {
+          summaryChunks.push(content);
+        } else {
+          transcriptChunks.push(content);
+        }
+      }
+
+      logger.info(
+        { accountId, title, summaryChunks: summaryChunks.length, transcriptChunks: transcriptChunks.length },
+        '[gong-transcript] Full transcript fetched and cached',
+      );
+
+      if (summaryChunks.length === 0 && transcriptChunks.length === 0) return null;
+
+      return {
+        title,
+        summary: summaryChunks.length > 0 ? summaryChunks.join('\n\n') : null,
+        transcript: transcriptChunks.join('\n\n---\n\n'),
+        chunkCount: results.length,
+      };
+    } catch (err) {
+      logger.error({ err, accountId, title }, 'Failed to fetch full Gong transcript');
+      return null;
+    }
+  });
+}
+
+/**
+ * Generate a full Gong call brief by using the cached full transcript
+ * and synthesizing via OpenAI.
  * Cached indefinitely (immutable Gong data).
  */
 export async function generateGongCallBrief(
@@ -506,48 +588,19 @@ export async function generateGongCallBrief(
 
   return cachedCall<string | null>(cacheKey, 0, async () => {
     try {
-      const searchResult = await callTool<Record<string, unknown>>('get_account_interactions', {
-        company_id: accountId,
-        query: title,
-        source_types: ['gong_call'],
-        limit: 20,
-      });
-
-      const results = ((searchResult.results ?? []) as Array<Record<string, unknown>>)
-        .filter((r) => String(r.title ?? '') === title);
-
-      if (results.length === 0) return null;
-
-      // Separate summary chunks from transcript chunks
-      const summaryChunks: string[] = [];
-      const transcriptChunks: string[] = [];
-
-      for (const r of results) {
-        const content = String(r.content ?? '');
-        if (!content) continue;
-        if (content.trimStart().toLowerCase().startsWith('summary')) {
-          summaryChunks.push(content);
-        } else {
-          transcriptChunks.push(content);
-        }
-      }
-
-      logger.info(
-        { accountId, title, summaryChunks: summaryChunks.length, transcriptChunks: transcriptChunks.length },
-        '[gong-brief] Chunks collected for synthesis',
-      );
-
-      if (summaryChunks.length === 0 && transcriptChunks.length === 0) return null;
+      // Use the cached full transcript
+      const gongData = await fetchFullGongTranscript(accountId, title);
+      if (!gongData) return null;
 
       const sections: string[] = [];
-      if (summaryChunks.length > 0) {
-        sections.push(`EXISTING CALL SUMMARY (may be truncated):\n${summaryChunks[0]}`);
+      if (gongData.summary) {
+        sections.push(`EXISTING CALL SUMMARY (may be truncated):\n${gongData.summary}`);
       }
-      if (transcriptChunks.length > 0) {
-        // Include up to 10 transcript chunks to stay within token limits
-        const chunks = transcriptChunks.slice(0, 10);
-        sections.push(`CALL TRANSCRIPT EXCERPTS:\n${chunks.join('\n\n---\n\n')}`);
+      if (gongData.transcript) {
+        sections.push(`CALL TRANSCRIPT:\n${gongData.transcript}`);
       }
+
+      if (sections.length === 0) return null;
 
       const response = await client.chat.completions.create({
         model: env.OPENAI_MODEL,
@@ -555,7 +608,7 @@ export async function generateGongCallBrief(
           {
             role: 'system',
             content:
-              'You are a sales engineering assistant. Given a partial call summary and transcript excerpts from a Gong call recording, generate a complete, structured call brief.\n\nFormat the brief with these sections using markdown:\n\n## Summary\nA 2-4 sentence overview of the call covering who was involved, what was discussed, and the outcome.\n\n## Key Highlights\n- Bullet points covering the most important discussion topics and decisions\n\n## Action Items\n- Specific tasks or follow-ups that were committed to, with owners if mentioned\n\n## Next Steps\n- What was agreed upon for moving forward\n\nBe concise and factual. Only include information that is clearly supported by the transcript and summary. If a section has no relevant content, omit it.',
+              'You are a sales engineering assistant. Given a call summary and transcript from a Gong call recording, generate a complete, structured call brief.\n\nFormat the brief with these sections using markdown:\n\n## Summary\nA 2-4 sentence overview of the call covering who was involved, what was discussed, and the outcome.\n\n## Key Highlights\n- Bullet points covering the most important discussion topics and decisions\n\n## Action Items\n- Specific tasks or follow-ups that were committed to, with owners if mentioned\n\n## Next Steps\n- What was agreed upon for moving forward\n\nBe concise and factual. Only include information that is clearly supported by the transcript and summary. If a section has no relevant content, omit it.',
           },
           {
             role: 'user',
@@ -570,6 +623,128 @@ export async function generateGongCallBrief(
     } catch (err) {
       logger.error({ err }, 'Failed to generate Gong call brief with OpenAI');
       return null;
+    }
+  });
+}
+
+export interface ContactPersonalInfo {
+  location?: string;
+  interests?: string;
+  family?: string;
+  hobbies?: string;
+  background?: string;
+  travel?: string;
+  other?: string;
+}
+
+export interface ContactInsight {
+  contactName: string;
+  personalInfo: ContactPersonalInfo;
+  sourceCallTitles: string[];
+}
+
+/**
+ * Extract personal insights about contacts from Gong call transcripts.
+ * Looks for casual conversation, small talk, and mentions of personal
+ * details (location, family, hobbies, interests, travel, etc.).
+ * Cached indefinitely — Gong data is immutable.
+ */
+export async function generateContactInsights(
+  accountId: string,
+): Promise<ContactInsight[]> {
+  const client = getClient();
+  if (!client) {
+    logger.warn('OpenAI API key not configured, skipping contact insights');
+    return [];
+  }
+
+  const cacheKey = `openai:contact-insights:${accountId}`;
+
+  return cachedCall<ContactInsight[]>(cacheKey, 0, async () => {
+    try {
+      const [contacts, calls] = await Promise.all([
+        getAccountContacts(accountId).catch(() => []),
+        getAccountInteractions(accountId, { sourceTypes: ['gong_call'] }).catch(() => []),
+      ]);
+
+      const contactsArr = contacts as Array<Record<string, unknown>>;
+      const callsArr = calls as Array<Record<string, unknown>>;
+
+      if (contactsArr.length === 0 || callsArr.length === 0) return [];
+
+      const contactNames = contactsArr.map((c) => String(c.name ?? '')).filter(Boolean);
+      if (contactNames.length === 0) return [];
+
+      // Get unique call titles, limit to 15 most recent
+      const callTitles = [...new Set(
+        callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
+      )].slice(0, 15);
+
+      if (callTitles.length === 0) return [];
+
+      // Fetch full transcripts for each call
+      const transcripts = await Promise.all(
+        callTitles.map(async (title) => {
+          const data = await fetchFullGongTranscript(accountId, title).catch(() => null);
+          if (!data?.transcript) return null;
+          // Truncate individual transcripts to ~10000 chars if needed
+          const text = data.transcript.length > 10000
+            ? data.transcript.slice(0, 10000) + '\n[...truncated]'
+            : data.transcript;
+          return { title, text };
+        }),
+      );
+
+      const validTranscripts = transcripts.filter(
+        (t): t is { title: string; text: string } => t !== null,
+      );
+
+      if (validTranscripts.length === 0) return [];
+
+      const transcriptText = validTranscripts
+        .map((t) => `--- Call: "${t.title}" ---\n${t.text}`)
+        .join('\n\n');
+
+      logger.info(
+        { accountId, contacts: contactNames.length, calls: validTranscripts.length },
+        '[contact-insights] Sending to OpenAI',
+      );
+
+      const response = await client.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a sales engineering assistant. Given Gong call transcripts and a list of contact names, extract personal details mentioned in casual conversation and small talk. Look for mentions of:\n\n- Location: where they live or are based\n- Interests: things they are interested in or enthusiastic about\n- Family: mentions of spouse, children, family events\n- Hobbies: activities they do outside work\n- Background: career history, education, previous companies\n- Travel: upcoming trips, vacations, places visited\n- Other: any other personal details worth remembering for rapport building\n\nOnly include contacts where you found personal information. Only include fields where you have concrete information — do not guess or infer. Each field value should be a concise sentence or phrase.\n\nReturn a JSON array of objects with this structure:\n[\n  {\n    "contactName": "Full Name",\n    "personalInfo": {\n      "location": "...",\n      "interests": "...",\n      "family": "...",\n      "hobbies": "...",\n      "background": "...",\n      "travel": "...",\n      "other": "..."\n    },\n    "sourceCallTitles": ["Call Title 1", "Call Title 2"]\n  }\n]\n\nOnly include fields in personalInfo that have actual data. sourceCallTitles should list which calls the information came from. If no personal information is found for any contact, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
+          },
+          {
+            role: 'user',
+            content: `Extract personal insights about these contacts from the call transcripts below.\n\nContacts: ${contactNames.join(', ')}\n\n${transcriptText}`,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 2500,
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '[]';
+      const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(jsonStr);
+
+      if (!Array.isArray(parsed)) return [];
+
+      return parsed
+        .filter((item: Record<string, unknown>) => item.contactName && item.personalInfo)
+        .map((item: Record<string, unknown>) => ({
+          contactName: String(item.contactName),
+          personalInfo: item.personalInfo as ContactPersonalInfo,
+          sourceCallTitles: Array.isArray(item.sourceCallTitles)
+            ? (item.sourceCallTitles as string[]).map(String)
+            : [],
+        }));
+    } catch (err) {
+      logger.error({ err }, 'Failed to generate contact insights with OpenAI');
+      return [];
     }
   });
 }
@@ -602,7 +777,7 @@ export async function summarizePOCs(
 
   // cachedCall may return old-format cached values (plain string from before
   // the health rating was added). Normalize to the new shape.
-  const raw = await cachedCall<POCSummaryResult | string | null>(cacheKey, 3600, async () => {
+  const raw = await cachedCall<POCSummaryResult | string | null>(cacheKey, 0, async () => {
     try {
       const [calls, opportunities] = await Promise.all([
         getAccountInteractions(accountId, { sourceTypes: ['gong_call'] }).catch(() => []),
@@ -612,7 +787,7 @@ export async function summarizePOCs(
       const callsArr = calls as Array<Record<string, unknown>>;
       const oppsArr = opportunities as Array<Record<string, unknown>>;
 
-      // Get unique call titles and generate briefs
+      // Get unique call titles and fetch briefs + full transcripts
       const callTitles = [...new Set(
         callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
       )].slice(0, 15);
@@ -620,15 +795,27 @@ export async function summarizePOCs(
       const sections: string[] = [];
 
       if (callTitles.length > 0) {
-        const briefs = await Promise.all(
+        const callData = await Promise.all(
           callTitles.map(async (title) => {
-            const brief = await generateGongCallBrief(accountId, title).catch(() => null);
-            return brief ? `[Call] ${title}:\n${brief}` : null;
+            const [brief, transcript] = await Promise.all([
+              generateGongCallBrief(accountId, title).catch(() => null),
+              fetchFullGongTranscript(accountId, title).catch(() => null),
+            ]);
+            if (!brief && !transcript) return null;
+            const parts: string[] = [`[Call] ${title}:`];
+            if (brief) parts.push(`Brief:\n${brief}`);
+            if (transcript?.transcript) {
+              const text = transcript.transcript.length > 3000
+                ? transcript.transcript.slice(0, 3000) + '\n[...truncated]'
+                : transcript.transcript;
+              parts.push(`Transcript:\n${text}`);
+            }
+            return parts.join('\n');
           }),
         );
-        const validBriefs = briefs.filter(Boolean);
-        if (validBriefs.length > 0) {
-          sections.push(`GONG CALL BRIEFS:\n${validBriefs.join('\n\n')}`);
+        const validCalls = callData.filter(Boolean);
+        if (validCalls.length > 0) {
+          sections.push(`GONG CALLS:\n${validCalls.join('\n\n')}`);
         }
       }
 
@@ -648,7 +835,7 @@ export async function summarizePOCs(
           {
             role: 'system',
             content:
-              'You are a sales engineering assistant. Given Gong call briefs and opportunity data for a customer account, identify and summarize any ongoing Proof of Concept (POC) or trial evaluations.\n\nIf there are active POCs, format the response with these sections using **Bold Headings** followed by bullet points:\n\n**POC Overview**\n- What is being evaluated, the product/solution under test, and the overall goal\n\n**Current Status**\n- Where the POC stands today — what has been completed, what is in progress\n\n**Key Findings**\n- Technical discoveries, integration results, blockers encountered, or decisions made during the POC\n\n**Next Steps**\n- What remains to be done, upcoming milestones, or planned follow-ups\n\nBe concise and specific. Only include sections with relevant content. If there is no evidence of an ongoing POC or evaluation, return exactly the text: NO_POC_DETECTED\n\nAt the very end of your response, on a new line, include a JSON health assessment in this exact format:\n<!--HEALTH:{"rating":"green|yellow|red","reason":"one sentence explanation"}-->\n\nRating criteria:\n- green: POC is progressing well, positive sentiment, no major blockers, on track\n- yellow: POC has some concerns — minor blockers, slow progress, mixed signals, or unclear timeline\n- red: POC is at risk — major blockers, negative sentiment, stalled progress, or critical issues',
+              'You are a sales engineering assistant. Given Gong call briefs, full call transcripts, and opportunity data for a customer account, identify and summarize any ongoing Proof of Concept (POC) or trial evaluations.\n\nIf there are active POCs, format the response with these sections using **Bold Headings** followed by bullet points:\n\n**POC Overview**\n- What is being evaluated, the product/solution under test, and the overall goal\n\n**Current Status**\n- Where the POC stands today — what has been completed, what is in progress\n\n**Key Findings**\n- Technical discoveries, integration results, blockers encountered, or decisions made during the POC\n\n**Next Steps**\n- What remains to be done, upcoming milestones, or planned follow-ups\n\nBe concise and specific. Only include sections with relevant content. Use details from the full transcripts for deeper context where the briefs may have missed nuance. If there is no evidence of an ongoing POC or evaluation, return exactly the text: NO_POC_DETECTED\n\nAt the very end of your response, on a new line, include a JSON health assessment in this exact format:\n<!--HEALTH:{"rating":"green|yellow|red","reason":"one sentence explanation"}-->\n\nRating criteria:\n- green: POC is progressing well, positive sentiment, no major blockers, on track\n- yellow: POC has some concerns — minor blockers, slow progress, mixed signals, or unclear timeline\n- red: POC is at risk — major blockers, negative sentiment, stalled progress, or critical issues',
           },
           {
             role: 'user',
@@ -837,53 +1024,339 @@ export async function generateMeetingBrief(
   });
 }
 
+// ── Cross-account insights ──
+
+export interface TechnologyPattern {
+  pattern: string;
+  accounts: string[];
+  frequency: number;
+  detail: string;
+}
+
+export interface ConversationTrend {
+  topic: string;
+  accounts: string[];
+  recentMentions: number;
+  trend: 'rising' | 'stable' | 'declining';
+  detail: string;
+}
+
+export interface CrossTeamInsight {
+  insight: string;
+  accounts: string[];
+}
+
+export interface InsightsResult {
+  technologyPatterns: TechnologyPattern[];
+  conversationTrends: ConversationTrend[];
+  crossTeamInsights: CrossTeamInsight[];
+}
+
+/**
+ * Generate cross-account insights by analyzing cached Gong briefs and POC
+ * summaries across the user's accounts. For cross-team insights, also
+ * samples accounts not owned by the user. Cached 4 hours per user.
+ */
+export async function generateInsights(
+  userId: string,
+  userAccounts: Array<{ id: string; name: string }>,
+  allAccounts: Array<{ id: string; name: string }>,
+): Promise<InsightsResult | null> {
+  const client = getClient();
+  if (!client) {
+    logger.warn('OpenAI API key not configured, skipping insights');
+    return null;
+  }
+
+  if (userAccounts.length === 0) return null;
+
+  const cacheKey = `openai:insights:${userId}`;
+
+  return cachedCall<InsightsResult | null>(cacheKey, 14400, async () => {
+    try {
+      // Collect cached Gong briefs and POC summaries for user's accounts — in parallel
+      const userSectionResults = await Promise.all(
+        userAccounts.map(async (account) => {
+          const parts: string[] = [`=== ${account.name} (${account.id}) ===`];
+
+          // Get cached POC summary and interactions in parallel
+          const [pocSummary, calls] = await Promise.all([
+            summarizePOCs(account.id).catch(() => null),
+            getAccountInteractions(account.id, { sourceTypes: ['gong_call'] }).catch(() => []),
+          ]);
+
+          if (pocSummary) {
+            parts.push(`POC Health: ${pocSummary.health.rating} — ${pocSummary.health.reason}`);
+            parts.push(`POC Summary: ${pocSummary.summary}`);
+          }
+
+          const callsArr = calls as Array<Record<string, unknown>>;
+          const callTitles = [...new Set(
+            callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
+          )].slice(0, 8);
+
+          if (callTitles.length > 0) {
+            const briefs = await Promise.all(
+              callTitles.map(async (title) => {
+                const brief = await generateGongCallBrief(account.id, title).catch(() => null);
+                return brief ? `[Call] ${title}:\n${brief}` : null;
+              }),
+            );
+            const validBriefs = briefs.filter(Boolean);
+            if (validBriefs.length > 0) {
+              parts.push(validBriefs.join('\n'));
+            }
+          }
+
+          return parts.length > 1 ? parts.join('\n') : null;
+        }),
+      );
+      const userSections = userSectionResults.filter(Boolean) as string[];
+
+      // For cross-team insights, sample accounts not in user's set — in parallel
+      const userAccountIds = new Set(userAccounts.map((a) => a.id));
+      const otherAccounts = allAccounts
+        .filter((a) => !userAccountIds.has(a.id))
+        .slice(0, Math.max(0, 20 - userAccounts.length));
+
+      const crossTeamResults = await Promise.all(
+        otherAccounts.map(async (account) => {
+          const parts: string[] = [`=== ${account.name} (${account.id}) ===`];
+          const calls = await getAccountInteractions(account.id, { sourceTypes: ['gong_call'] }).catch(() => []);
+          const callsArr = calls as Array<Record<string, unknown>>;
+          const callTitles = [...new Set(
+            callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
+          )].slice(0, 5);
+
+          if (callTitles.length > 0) {
+            const briefs = await Promise.all(
+              callTitles.map(async (title) => {
+                const brief = await generateGongCallBrief(account.id, title).catch(() => null);
+                return brief ? `[Call] ${title}:\n${brief}` : null;
+              }),
+            );
+            const validBriefs = briefs.filter(Boolean);
+            if (validBriefs.length > 0) {
+              parts.push(validBriefs.join('\n'));
+            }
+          }
+
+          return parts.length > 1 ? parts.join('\n') : null;
+        }),
+      );
+      const crossTeamSections = crossTeamResults.filter(Boolean) as string[];
+
+      if (userSections.length === 0) return null;
+
+      const prompt = [
+        'MY ACCOUNTS:',
+        userSections.join('\n\n'),
+      ];
+
+      if (crossTeamSections.length > 0) {
+        prompt.push('\nOTHER TEAM ACCOUNTS:', crossTeamSections.join('\n\n'));
+      }
+
+      logger.info(
+        { userId, userAccounts: userAccounts.length, otherAccounts: otherAccounts.length },
+        '[insights] Sending to OpenAI',
+      );
+
+      const response = await client.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a sales engineering assistant. Given Gong call briefs and POC summaries across multiple customer accounts, analyze the data for cross-account patterns and trends.\n\nReturn a JSON object with three arrays:\n\n1. "technologyPatterns": Technology themes, products, or architectural patterns that appear across multiple accounts.\n   Each item: { "pattern": "name", "accounts": ["account names"], "frequency": number_of_mentions, "detail": "brief explanation" }\n   Examples: "Kubernetes migration", "API Gateway adoption", "Service mesh evaluation"\n\n2. "conversationTrends": Topics or themes trending across recent conversations.\n   Each item: { "topic": "name", "accounts": ["account names"], "recentMentions": count, "trend": "rising"|"stable"|"declining", "detail": "brief explanation" }\n   Base the trend direction on recency and frequency of mentions.\n\n3. "crossTeamInsights": Broader patterns visible across ALL accounts (including other team accounts), not just the user\'s accounts. These should surface patterns that an individual SE might miss.\n   Each item: { "insight": "observation", "accounts": ["account names involved"] }\n   Examples: "3 accounts are simultaneously evaluating competitor X", "Security compliance is a recurring blocker"\n\nReturn 3-8 items per array, sorted by relevance. Only include patterns that span 2+ accounts. Be specific and actionable — avoid generic observations. Return ONLY valid JSON, no markdown fences or other text.',
+          },
+          {
+            role: 'user',
+            content: `Analyze these accounts for cross-cutting patterns and trends:\n\n${prompt.join('\n')}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 3000,
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+      const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(jsonStr);
+
+      return {
+        technologyPatterns: Array.isArray(parsed.technologyPatterns) ? parsed.technologyPatterns : [],
+        conversationTrends: Array.isArray(parsed.conversationTrends) ? parsed.conversationTrends : [],
+        crossTeamInsights: Array.isArray(parsed.crossTeamInsights) ? parsed.crossTeamInsights : [],
+      };
+    } catch (err) {
+      logger.error({ err }, 'Failed to generate insights with OpenAI');
+      return null;
+    }
+  });
+}
+
 // ── Warmup status tracking ──
 
 export interface WarmupStatus {
   status: 'idle' | 'warming' | 'complete' | 'error';
+  phase: 'gong-briefs' | 'contact-insights' | 'poc-summaries' | 'done';
   totalAccounts: number;
   processedAccounts: number;
   totalCalls: number;
   generated: number;
   skipped: number;
+  contactInsightsWarmed: number;
+  pocSummariesWarmed: number;
   startedAt: string | null;
   completedAt: string | null;
   error: string | null;
+  refreshCount: number;
+  lastRefreshAt: string | null;
+  lastRefreshNewCalls: number;
 }
 
 const warmupState: WarmupStatus = {
   status: 'idle',
+  phase: 'done',
   totalAccounts: 0,
   processedAccounts: 0,
   totalCalls: 0,
   generated: 0,
   skipped: 0,
+  contactInsightsWarmed: 0,
+  pocSummariesWarmed: 0,
   startedAt: null,
   completedAt: null,
   error: null,
+  refreshCount: 0,
+  lastRefreshAt: null,
+  lastRefreshNewCalls: 0,
 };
 
 export function getWarmupStatus(): WarmupStatus {
   return { ...warmupState };
 }
 
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
 /**
- * Warm Gong call briefs for ALL accounts on server startup.
- * Fetches every account, gets their Gong calls, and generates briefs
- * for each unique call title. Processes sequentially to avoid
- * hammering OpenAI. Already-cached briefs are skipped (cache hit).
+ * Periodic refresh: discover new Gong calls across all accounts,
+ * generate briefs for any new ones, and invalidate derivative caches
+ * so they regenerate with the new data on next access.
+ */
+async function runPeriodicRefresh(): Promise<void> {
+  logger.info('[refresh] Starting periodic Gong call discovery');
+
+  try {
+    const accounts = await listAccounts();
+    let totalNewCalls = 0;
+    const accountsWithNewCalls: string[] = [];
+
+    for (const account of accounts) {
+      const accountId = account.id as string;
+      const accountName = account.name as string;
+
+      try {
+        // Fetch Gong calls (interaction list has a 5-min TTL, so reflects new calls)
+        const interactions = (await getAccountInteractions(accountId, {
+          sourceTypes: ['gong_call'],
+        })) as Array<Record<string, unknown>>;
+
+        const titles = [
+          ...new Set(
+            interactions
+              .map((i) => String(i.title ?? ''))
+              .filter((t) => t.length > 0),
+          ),
+        ];
+
+        if (titles.length === 0) continue;
+
+        // Check which calls already have cached transcripts
+        let accountNewCalls = 0;
+        for (const title of titles) {
+          const hash = crypto.createHash('md5').update(`${accountId}:${title}`).digest('hex');
+          const transcriptKey = `gong:transcript:${hash}`;
+          const existing = await getCache<unknown>(transcriptKey);
+
+          if (!existing) {
+            // New call — fetch transcript and generate brief
+            logger.info({ accountId, accountName, title }, '[refresh] New Gong call discovered');
+            await fetchFullGongTranscript(accountId, title).catch((err) => {
+              logger.warn({ accountId, title, err: (err as Error).message }, '[refresh] Failed to fetch transcript');
+            });
+            await generateGongCallBrief(accountId, title).catch((err) => {
+              logger.warn({ accountId, title, err: (err as Error).message }, '[refresh] Failed to generate brief');
+            });
+            accountNewCalls++;
+          }
+        }
+
+        if (accountNewCalls > 0) {
+          totalNewCalls += accountNewCalls;
+          accountsWithNewCalls.push(accountId);
+
+          // Invalidate derivative caches for this account
+          await invalidateCache(`openai:contact-insights:${accountId}`);
+          await invalidateCache(`openai:poc-summary:${accountId}`);
+          await invalidateCache(`openai:action-items:${accountId}`);
+          await invalidateCache(`openai:account-overview:${accountId}`);
+          await invalidateCache(`openai:tech-details:${accountId}`);
+
+          logger.info(
+            { accountId, accountName, newCalls: accountNewCalls },
+            '[refresh] Invalidated derivative caches for account',
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { accountId, accountName, err: (err as Error).message },
+          '[refresh] Failed to check account for new calls',
+        );
+      }
+    }
+
+    // Derivative caches were already invalidated above.
+    // Data will regenerate lazily on next access, avoiding unnecessary
+    // OpenAI calls for accounts nobody is actively viewing.
+
+    warmupState.refreshCount++;
+    warmupState.lastRefreshAt = new Date().toISOString();
+    warmupState.lastRefreshNewCalls = totalNewCalls;
+
+    logger.info(
+      {
+        newCalls: totalNewCalls,
+        accountsRefreshed: accountsWithNewCalls.length,
+        totalAccounts: accounts.length,
+        refreshCount: warmupState.refreshCount,
+      },
+      '[refresh] Periodic refresh complete',
+    );
+  } catch (err) {
+    logger.error({ err: (err as Error).message }, '[refresh] Periodic refresh failed');
+  }
+}
+
+/**
+ * Warm Gong call briefs, contact insights, and POC summaries for ALL
+ * accounts on server startup. Processes sequentially to avoid hammering
+ * OpenAI. Already-cached data is skipped (cache hit).
  * Runs in the background — does not block server startup.
+ * After warmup completes, starts a periodic refresh every 30 minutes.
  */
 export async function warmAllGongBriefs(): Promise<void> {
   const client = getClient();
   if (!client) {
     logger.info('[warm-all-briefs] OpenAI not configured, skipping');
     warmupState.status = 'complete';
+    warmupState.phase = 'done';
     warmupState.completedAt = new Date().toISOString();
     return;
   }
 
   warmupState.status = 'warming';
+  warmupState.phase = 'gong-briefs';
   warmupState.startedAt = new Date().toISOString();
   warmupState.completedAt = null;
   warmupState.error = null;
@@ -891,6 +1364,8 @@ export async function warmAllGongBriefs(): Promise<void> {
   warmupState.totalCalls = 0;
   warmupState.generated = 0;
   warmupState.skipped = 0;
+  warmupState.contactInsightsWarmed = 0;
+  warmupState.pocSummariesWarmed = 0;
 
   try {
     const accounts = await listAccounts();
@@ -954,19 +1429,112 @@ export async function warmAllGongBriefs(): Promise<void> {
       warmupState.processedAccounts++;
     }
 
+    logger.info(
+      { totalCalls: warmupState.totalCalls, generated: warmupState.generated, skipped: warmupState.skipped, accountCount: accounts.length },
+      '[warm-all-briefs] Gong briefs phase complete',
+    );
+
+    // Phase 2: Warm contact insights (skip accounts already cached)
+    warmupState.phase = 'contact-insights';
+    let contactInsightsSkipped = 0;
+    logger.info({ accountCount: accounts.length }, '[warmup] Starting contact insights warming');
+
+    for (const account of accounts) {
+      const accountId = account.id as string;
+      const accountName = account.name as string;
+      try {
+        const cached = await getCache<ContactInsight[]>(`openai:contact-insights:${accountId}`);
+        if (cached) {
+          if (cached.length > 0) warmupState.contactInsightsWarmed++;
+          contactInsightsSkipped++;
+          continue;
+        }
+        const insights = await generateContactInsights(accountId);
+        if (insights.length > 0) {
+          warmupState.contactInsightsWarmed++;
+          logger.info(
+            { accountId, accountName, contactsWithInsights: insights.length },
+            '[warmup] Warmed contact insights',
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { accountId, accountName, err: (err as Error).message },
+          '[warmup] Failed to warm contact insights',
+        );
+      }
+    }
+
+    logger.info(
+      { warmed: warmupState.contactInsightsWarmed, skipped: contactInsightsSkipped, accountCount: accounts.length },
+      '[warmup] Contact insights phase complete',
+    );
+
+    // Phase 3: Warm POC summaries (skip accounts already cached)
+    warmupState.phase = 'poc-summaries';
+    let pocSummariesSkipped = 0;
+    logger.info({ accountCount: accounts.length }, '[warmup] Starting POC summary warming');
+
+    for (const account of accounts) {
+      const accountId = account.id as string;
+      const accountName = account.name as string;
+      try {
+        const cached = await getCache<POCSummaryResult | string | null>(`openai:poc-summary:${accountId}`);
+        if (cached) {
+          warmupState.pocSummariesWarmed++;
+          pocSummariesSkipped++;
+          continue;
+        }
+        const result = await summarizePOCs(accountId);
+        if (result) {
+          warmupState.pocSummariesWarmed++;
+          logger.info(
+            { accountId, accountName, health: result.health.rating },
+            '[warmup] Warmed POC summary',
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { accountId, accountName, err: (err as Error).message },
+          '[warmup] Failed to warm POC summary',
+        );
+      }
+    }
+
+    logger.info(
+      { warmed: warmupState.pocSummariesWarmed, skipped: pocSummariesSkipped, accountCount: accounts.length },
+      '[warmup] POC summaries phase complete',
+    );
+
+    warmupState.phase = 'done';
     warmupState.status = 'complete';
     warmupState.completedAt = new Date().toISOString();
     logger.info(
-      { totalCalls: warmupState.totalCalls, generated: warmupState.generated, skipped: warmupState.skipped, accountCount: accounts.length },
-      '[warm-all-briefs] Complete',
+      {
+        totalCalls: warmupState.totalCalls,
+        generated: warmupState.generated,
+        skipped: warmupState.skipped,
+        contactInsightsWarmed: warmupState.contactInsightsWarmed,
+        pocSummariesWarmed: warmupState.pocSummariesWarmed,
+        accountCount: accounts.length,
+      },
+      '[warmup] All phases complete',
     );
+
+    // Start periodic refresh to discover new Gong calls
+    setInterval(() => {
+      runPeriodicRefresh().catch((err) => {
+        logger.error({ err: (err as Error).message }, '[refresh] Unhandled error in periodic refresh');
+      });
+    }, REFRESH_INTERVAL_MS);
+    logger.info({ intervalMs: REFRESH_INTERVAL_MS }, '[warmup] Periodic refresh scheduled');
   } catch (err) {
     warmupState.status = 'error';
     warmupState.error = (err as Error).message;
     warmupState.completedAt = new Date().toISOString();
     logger.error(
       { err: (err as Error).message },
-      '[warm-all-briefs] Failed to warm Gong briefs',
+      '[warmup] Failed during warming',
     );
   }
 }

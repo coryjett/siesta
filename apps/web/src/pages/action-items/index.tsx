@@ -5,6 +5,23 @@ import { useCompleteActionItem, useUncompleteActionItem } from '../../api/querie
 import { PageLoading } from '../../components/common/loading';
 import { formatDateTime } from '../../lib/date';
 
+const SOURCE_LABELS: Record<string, string> = {
+  gong_call: 'Call',
+  gmail_email: 'Email',
+  calendar_event: 'Meeting',
+  zendesk_ticket: 'Ticket',
+};
+
+function SourceIcon({ sourceType }: { sourceType: string }) {
+  const label = SOURCE_LABELS[sourceType];
+  if (!label) return null;
+  return (
+    <span className="inline-flex items-center rounded bg-[#6b26d9]/10 dark:bg-[#8249df]/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#6b26d9] dark:text-[#8249df]">
+      {label}
+    </span>
+  );
+}
+
 function matchesFilter(item: { action: string; accountName: string; source: string }, query: string): boolean {
   const q = query.toLowerCase();
   return (
@@ -104,7 +121,25 @@ export default function ActionItemsPage() {
                     {item.accountName}
                   </button>
                   <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                  <span>{item.source}</span>
+                  {item.sourceType && item.recordId ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate({
+                        to: '/interactions/$accountId/$sourceType/$recordId',
+                        params: { accountId: item.accountId, sourceType: item.sourceType, recordId: item.recordId! },
+                        search: { title: item.source },
+                      } as never)}
+                      className="inline-flex items-center gap-1 font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
+                    >
+                      <SourceIcon sourceType={item.sourceType} />
+                      {item.source}
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      <SourceIcon sourceType={item.sourceType} />
+                      {item.source}
+                    </span>
+                  )}
                   <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
                   <span>{formatDateTime(item.date)}</span>
                 </div>
@@ -168,7 +203,25 @@ export default function ActionItemsPage() {
                         {item.accountName}
                       </button>
                       <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                      <span>{item.source}</span>
+                      {item.sourceType && item.recordId ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate({
+                            to: '/interactions/$accountId/$sourceType/$recordId',
+                            params: { accountId: item.accountId, sourceType: item.sourceType, recordId: item.recordId! },
+                            search: { title: item.source },
+                          } as never)}
+                          className="inline-flex items-center gap-1 font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
+                        >
+                          <SourceIcon sourceType={item.sourceType} />
+                          {item.source}
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <SourceIcon sourceType={item.sourceType} />
+                          {item.source}
+                        </span>
+                      )}
                       <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
                       <span>{formatDateTime(item.date)}</span>
                       {item.completedAt && (

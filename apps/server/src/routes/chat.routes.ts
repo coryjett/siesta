@@ -82,6 +82,40 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   /**
+   * GET /api/chat/unread
+   * Check if the user has unread chat notifications.
+   */
+  app.get('/api/chat/unread', async (request, reply) => {
+    const redis = getRedisClient();
+    if (!redis) {
+      return reply.send({ unread: false });
+    }
+
+    try {
+      const flag = await redis.get(`chat:unread:${request.user.id}`);
+      return reply.send({ unread: flag === '1' });
+    } catch {
+      return reply.send({ unread: false });
+    }
+  });
+
+  /**
+   * DELETE /api/chat/unread
+   * Clear the unread notification flag.
+   */
+  app.delete('/api/chat/unread', async (request, reply) => {
+    const redis = getRedisClient();
+    if (redis) {
+      try {
+        await redis.del(`chat:unread:${request.user.id}`);
+      } catch {
+        // Ignore
+      }
+    }
+    return reply.send({ ok: true });
+  });
+
+  /**
    * POST /api/chat
    * Streaming SSE endpoint for the Señor Bot chat agent.
    */

@@ -19,6 +19,9 @@ const navItems: NavItem[] = [
   { label: 'Accounts', to: '/accounts', icon: 'A' },
   { label: 'Action Items', to: '/action-items', icon: 'I' },
   { label: 'Opportunities', to: '/opportunities', icon: 'O' },
+  { label: 'Insights', to: '/insights', icon: 'N' },
+  { label: 'Tools', to: '/tools', icon: 'T' },
+  { label: 'Resources', to: '/resources', icon: 'R' },
 ];
 
 const roleLabels: Record<string, string> = {

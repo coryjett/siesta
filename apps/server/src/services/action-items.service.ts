@@ -86,8 +86,12 @@ export async function getUserActionItemsAcrossAccounts(
           if (!item.owner) return false;
           const ownerLower = item.owner.toLowerCase();
           const nameLower = userName.toLowerCase();
-          return ownerLower.includes(nameLower) || nameLower.includes(ownerLower)
-            || nameLower.split(' ').some((part) => part.length > 1 && ownerLower.includes(part));
+          // Match on full name, partial name, or generic team references
+          if (ownerLower.includes(nameLower) || nameLower.includes(ownerLower)) return true;
+          if (nameLower.split(' ').some((part) => part.length > 1 && ownerLower.includes(part))) return true;
+          // Include items assigned to generic team references (these are the user's accounts)
+          if (/\b(our team|our side|we|us|se team|se\b|engineer)/i.test(item.owner)) return true;
+          return false;
         })
         .map((item) => ({
           ...item,

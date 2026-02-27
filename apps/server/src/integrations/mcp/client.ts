@@ -118,6 +118,17 @@ async function doCallTool<T>(
     clearTimeout(timeout);
     const elapsed = Date.now() - reqStart;
     logger.error({ toolName, elapsed, err: (err as Error).message }, `[mcp-client] Fetch failed for ${toolName}`);
+
+    // Retry on timeout or network error by re-initializing the session
+    if (!isRetry) {
+      logger.info('MCP fetch failed, re-initializing session and retrying');
+      initialized = false;
+      sessionId = null;
+      const freshToken = await getAccessToken();
+      await initialize(freshToken);
+      return doCallTool<T>(toolName, args, freshToken, true);
+    }
+
     throw err;
   }
   clearTimeout(timeout);
@@ -125,7 +136,7 @@ async function doCallTool<T>(
   const elapsed = Date.now() - reqStart;
   logger.info({ toolName, status: response.status, elapsed, contentType: response.headers.get('Content-Type') }, `[mcp-client] Response for ${toolName}`);
 
-  // Retry on 401 (expired token) or 404 (stale session) with fresh session
+  // Retry on 401 (expired token), 404 (stale session), or 500 (upstream closed) with fresh session
   if ((response.status === 401 || response.status === 404) && !isRetry) {
     logger.info({ status: response.status }, 'MCP session invalid, re-initializing and retrying');
     initialized = false;
@@ -133,6 +144,19 @@ async function doCallTool<T>(
     const freshToken = await getAccessToken();
     await initialize(freshToken);
     return doCallTool<T>(toolName, args, freshToken, true);
+  }
+
+  if (response.status === 500 && !isRetry) {
+    const text = await response.text();
+    if (text.includes('upstream closed') || text.includes('connection closed')) {
+      logger.info({ status: response.status }, 'MCP upstream connection lost, re-initializing and retrying');
+      initialized = false;
+      sessionId = null;
+      const freshToken = await getAccessToken();
+      await initialize(freshToken);
+      return doCallTool<T>(toolName, args, freshToken, true);
+    }
+    throw new Error(`MCP tool call failed: ${response.status} ${text}`);
   }
 
   if (!response.ok) {

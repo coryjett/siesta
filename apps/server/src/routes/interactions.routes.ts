@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../auth/guards.js';
 import { getInteractionDetail } from '../services/mcp-interactions.service.js';
-import { generateGongCallBrief } from '../services/openai-summary.service.js';
+import { generateGongCallBrief, fetchFullGongTranscript } from '../services/openai-summary.service.js';
 import { searchPortfolio, getNegativeInteractions } from '../services/mcp-search.service.js';
 
 export async function interactionsRoutes(app: FastifyInstance) {
@@ -52,6 +52,37 @@ export async function interactionsRoutes(app: FastifyInstance) {
       limit: limit ? parseInt(limit, 10) : undefined,
     });
     return reply.send(results);
+  });
+
+  /**
+   * GET /api/interactions/:accountId/gong-transcript
+   * Get the full cached Gong transcript for a call.
+   */
+  app.get<{
+    Params: { accountId: string };
+    Querystring: { title: string };
+  }>('/api/interactions/:accountId/gong-transcript', async (request, reply) => {
+    const { accountId } = request.params;
+    const { title } = request.query;
+
+    if (!title) {
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'BadRequest',
+        message: 'title query parameter is required',
+      });
+    }
+
+    const transcript = await fetchFullGongTranscript(accountId, title);
+    if (!transcript) {
+      return reply.status(404).send({
+        statusCode: 404,
+        error: 'NotFound',
+        message: 'No transcript found for this call',
+      });
+    }
+
+    return reply.send(transcript);
   });
 
   /**

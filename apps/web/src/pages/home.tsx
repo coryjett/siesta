@@ -274,9 +274,29 @@ export default function HomePage() {
                           {item.accountName}
                         </button>
                         <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                        <span>{item.source}</span>
+                        {item.sourceType && item.recordId ? (
+                          <button
+                            type="button"
+                            onClick={() => navigate({
+                              to: '/interactions/$accountId/$sourceType/$recordId',
+                              params: { accountId: item.accountId, sourceType: item.sourceType, recordId: item.recordId! },
+                              search: { title: item.source },
+                            } as never)}
+                            className="font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
+                          >
+                            {item.source}
+                          </button>
+                        ) : (
+                          <span>{item.source}</span>
+                        )}
                         <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
                         <span>{formatDateTime(item.date)}</span>
+                        {item.owner && (
+                          <>
+                            <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
+                            <span className="font-medium">{item.owner}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
