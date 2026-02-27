@@ -1567,21 +1567,30 @@ export async function warmAllGongBriefs(): Promise<void> {
     }, REFRESH_INTERVAL_MS);
     logger.info({ intervalMs: REFRESH_INTERVAL_MS }, '[warmup] Periodic refresh scheduled');
 
-    // Schedule daily insights pre-generation (every 24 hours)
-    const DAILY_INSIGHTS_INTERVAL_MS = 24 * 60 * 60 * 1000;
+    // Schedule daily insights pre-generation at 6 AM local time
+    const scheduleNext6AM = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(6, 0, 0, 0);
+      if (next <= now) next.setDate(next.getDate() + 1);
+      const delayMs = next.getTime() - now.getTime();
+      logger.info({ nextRun: next.toISOString(), delayMs }, '[insights-warmup] Scheduled next run');
+      setTimeout(() => {
+        warmDailyInsights().catch((err) =>
+          logger.error({ err: (err as Error).message }, '[insights-warmup] Failed'),
+        );
+        scheduleNext6AM();
+      }, delayMs);
+    };
 
-    // Run once 5 min after warmup completes, then daily
+    // Run once 5 min after warmup completes, then schedule daily at 6 AM
     setTimeout(() => {
       warmDailyInsights().catch((err) =>
         logger.error({ err: (err as Error).message }, '[insights-warmup] Failed'),
       );
-      setInterval(() => {
-        warmDailyInsights().catch((err) =>
-          logger.error({ err: (err as Error).message }, '[insights-warmup] Failed'),
-        );
-      }, DAILY_INSIGHTS_INTERVAL_MS);
+      scheduleNext6AM();
     }, 5 * 60 * 1000);
-    logger.info('[warmup] Daily insights warmup scheduled (5 min delay, then every 24h)');
+    logger.info('[warmup] Daily insights warmup scheduled (5 min initial, then daily at 6 AM)');
   } catch (err) {
     warmupState.status = 'error';
     warmupState.error = (err as Error).message;
@@ -1591,6 +1600,34 @@ export async function warmAllGongBriefs(): Promise<void> {
       '[warmup] Failed during warming',
     );
   }
+}
+
+/**
+ * Generate insights for a single user. Skips if already cached.
+ * Called on first login and during daily batch warmup.
+ */
+export async function warmInsightsForUser(userId: string, userName: string, userEmail: string): Promise<boolean> {
+  const client = getClient();
+  if (!client) return false;
+
+  const cached = await getCache(`openai:insights:${userId}`);
+  if (cached) return true;
+
+  const [data, allAccountsRaw] = await Promise.all([
+    getHomepageData(userName, userEmail),
+    listAccounts(),
+  ]);
+  const userAccounts = (data.myAccounts ?? []).map((a) => ({
+    id: a.id,
+    name: a.name,
+  }));
+  const allAccounts = allAccountsRaw.map((a) => ({
+    id: a.id as string,
+    name: a.name as string,
+  }));
+
+  await generateInsights(userId, userAccounts, allAccounts);
+  return true;
 }
 
 /**
@@ -1621,28 +1658,8 @@ export async function warmDailyInsights(): Promise<void> {
 
   for (const user of activeUsers) {
     try {
-      // Skip if already cached
-      const cached = await getCache(`openai:insights:${user.id}`);
-      if (cached) {
-        generated++;
-        continue;
-      }
-
-      const [data, allAccountsRaw] = await Promise.all([
-        getHomepageData(user.name, user.email),
-        listAccounts(),
-      ]);
-      const userAccounts = (data.myAccounts ?? []).map((a) => ({
-        id: a.id,
-        name: a.name,
-      }));
-      const allAccounts = allAccountsRaw.map((a) => ({
-        id: a.id as string,
-        name: a.name as string,
-      }));
-
-      await generateInsights(user.id, userAccounts, allAccounts);
-      generated++;
+      const result = await warmInsightsForUser(user.id, user.name, user.email);
+      if (result) generated++;
     } catch (err) {
       failed++;
       logger.warn(

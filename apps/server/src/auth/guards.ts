@@ -4,6 +4,7 @@ import { validateSession } from './session.js';
 import { UnauthorizedError, ForbiddenError } from '../utils/errors.js';
 import { users } from '../db/schema/index.js';
 import { db } from '../db/client.js';
+import { warmInsightsForUser } from '../services/openai-summary.service.js';
 
 const COOKIE_NAME = 'siesta_session';
 
@@ -43,13 +44,19 @@ export async function requireAuth(request: FastifyRequest, _reply: FastifyReply)
   request.user = user;
 
   // Debounced last-login tracking — only update if older than 1 hour
+  const isFirstLogin = !user.lastLoginAt;
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  if (!user.lastLoginAt || user.lastLoginAt < oneHourAgo) {
+  if (isFirstLogin || user.lastLoginAt! < oneHourAgo) {
     db.update(users)
       .set({ lastLoginAt: new Date() })
       .where(eq(users.id, user.id))
       .execute()
       .catch(() => {}); // fire-and-forget, don't block request
+
+    // Generate insights immediately for first-time users
+    if (isFirstLogin) {
+      warmInsightsForUser(user.id, user.name, user.email).catch(() => {});
+    }
   }
 }
 
