@@ -16,6 +16,10 @@ import {
   getAccountArchitecture,
 } from './mcp-accounts.service.js';
 import { getInteractionDetail } from './mcp-interactions.service.js';
+import { getHomepageData } from './mcp-home.service.js';
+import { db } from '../db/client.js';
+import { users } from '../db/schema/index.js';
+import { gte } from 'drizzle-orm';
 
 let openai: OpenAI | null = null;
 
@@ -1243,6 +1247,8 @@ export interface WarmupStatus {
   refreshCount: number;
   lastRefreshAt: string | null;
   lastRefreshNewCalls: number;
+  insightsWarmed: number;
+  lastInsightsWarmupAt: string | null;
 }
 
 const warmupState: WarmupStatus = {
@@ -1261,6 +1267,8 @@ const warmupState: WarmupStatus = {
   refreshCount: 0,
   lastRefreshAt: null,
   lastRefreshNewCalls: 0,
+  insightsWarmed: 0,
+  lastInsightsWarmupAt: null,
 };
 
 export function getWarmupStatus(): WarmupStatus {
@@ -1558,6 +1566,22 @@ export async function warmAllGongBriefs(): Promise<void> {
       });
     }, REFRESH_INTERVAL_MS);
     logger.info({ intervalMs: REFRESH_INTERVAL_MS }, '[warmup] Periodic refresh scheduled');
+
+    // Schedule daily insights pre-generation (every 24 hours)
+    const DAILY_INSIGHTS_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+    // Run once 5 min after warmup completes, then daily
+    setTimeout(() => {
+      warmDailyInsights().catch((err) =>
+        logger.error({ err: (err as Error).message }, '[insights-warmup] Failed'),
+      );
+      setInterval(() => {
+        warmDailyInsights().catch((err) =>
+          logger.error({ err: (err as Error).message }, '[insights-warmup] Failed'),
+        );
+      }, DAILY_INSIGHTS_INTERVAL_MS);
+    }, 5 * 60 * 1000);
+    logger.info('[warmup] Daily insights warmup scheduled (5 min delay, then every 24h)');
   } catch (err) {
     warmupState.status = 'error';
     warmupState.error = (err as Error).message;
@@ -1567,4 +1591,72 @@ export async function warmAllGongBriefs(): Promise<void> {
       '[warmup] Failed during warming',
     );
   }
+}
+
+/**
+ * Pre-generate insights for all active users (logged in within the past 30 days).
+ * Processes users sequentially to avoid hammering OpenAI.
+ * Skips users whose insights are already cached.
+ */
+export async function warmDailyInsights(): Promise<void> {
+  const client = getClient();
+  if (!client) {
+    logger.info('[insights-warmup] OpenAI not configured, skipping');
+    return;
+  }
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const activeUsers = await db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(gte(users.lastLoginAt, thirtyDaysAgo));
+
+  logger.info(
+    { userCount: activeUsers.length },
+    '[insights-warmup] Starting daily insights pre-generation',
+  );
+
+  let generated = 0;
+  let failed = 0;
+
+  for (const user of activeUsers) {
+    try {
+      // Skip if already cached
+      const cached = await getCache(`openai:insights:${user.id}`);
+      if (cached) {
+        generated++;
+        continue;
+      }
+
+      const [data, allAccountsRaw] = await Promise.all([
+        getHomepageData(user.name, user.email),
+        listAccounts(),
+      ]);
+      const userAccounts = (data.myAccounts ?? []).map((a) => ({
+        id: a.id,
+        name: a.name,
+      }));
+      const allAccounts = allAccountsRaw.map((a) => ({
+        id: a.id as string,
+        name: a.name as string,
+      }));
+
+      await generateInsights(user.id, userAccounts, allAccounts);
+      generated++;
+    } catch (err) {
+      failed++;
+      logger.warn(
+        { userId: user.id, err: (err as Error).message },
+        '[insights-warmup] Failed for user',
+      );
+    }
+  }
+
+  warmupState.insightsWarmed = generated;
+  warmupState.lastInsightsWarmupAt = new Date().toISOString();
+
+  logger.info(
+    { generated, failed, total: activeUsers.length },
+    '[insights-warmup] Daily insights pre-generation complete',
+  );
 }

@@ -11,6 +11,7 @@ export const users = pgTable('users', {
   avatarUrl: varchar('avatar_url', { length: 1024 }),
   googleSub: varchar('google_sub', { length: 255 }).unique(),
   keycloakSub: varchar('keycloak_sub', { length: 255 }).unique(),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

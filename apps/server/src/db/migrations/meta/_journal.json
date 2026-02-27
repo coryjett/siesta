@@ -43,6 +43,20 @@
       "when": 1772115683535,
       "tag": "0005_free_eternals",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1772199376327,
+      "tag": "0006_dark_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1772199911094,
+      "tag": "0007_lowly_revanche",
+      "breakpoints": true
     }
   ]
 }
