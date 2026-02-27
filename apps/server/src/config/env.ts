@@ -22,7 +22,8 @@ const envSchema = z.object({
   SUPPORT_MCP_URL: z.string().default('https://support-agent-tools.is.solo.io/mcp'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().default('https://api.openai.com/v1'),
-  OPENAI_MODEL: z.string().default('gpt-4o'),
+  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+  OPENAI_CHAT_MODEL: z.string().default('gpt-4o'),
 });
 
 export type Env = z.infer<typeof envSchema>;
