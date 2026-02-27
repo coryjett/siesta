@@ -39,7 +39,17 @@ npm run db:studio              # Open Drizzle Studio GUI
 ```
 apps/
   server/src/
-    routes/          # Fastify route handlers (accounts, home, interactions, search, settings)
+    routes/          # Fastify route handlers
+      accounts.routes.ts       # Account CRUD and detail endpoints
+      home.routes.ts           # Dashboard data (accounts, stats, action items, meetings)
+      interactions.routes.ts   # Interaction search and detail
+      chat.routes.ts           # Señor Bot AI chat with MCP tool routing
+      bug-report.routes.ts     # Bug report processing jobs (send-solo.io links)
+      pricing.routes.ts        # Cloud instance pricing lookup (AWS/Azure/GCP)
+      resources.routes.ts      # Team-shared resources CRUD
+      tools.routes.ts          # Team-shared tools CRUD
+      settings.routes.ts       # App settings, integrations, cache management
+      support-mcp-auth.routes.ts # Support MCP OAuth flow
     instrumentation.ts # OpenTelemetry SDK init (loaded via --import before app starts)
     services/        # Business logic
       mcp-*.service.ts   # MCP tool proxies with Redis caching
@@ -48,13 +58,30 @@ apps/
       meetings.service.ts  # Upcoming meetings aggregation across user's accounts with Redis caching
       google-token.service.ts  # Shared Google OAuth token management
       encryption.service.ts    # AES-256-GCM token encryption
+      bug-report.service.ts    # Bug report parsing (YAML + kubectl describe formats) with streaming decompression
+      bug-report-job.service.ts # Async bug report job processing from send-solo.io links
+      send-download.service.ts  # Download and decrypt send-solo.io archives
+      instance-pricing.service.ts # Cloud instance pricing from AWS/Azure/GCP APIs (cached 24h in Redis)
+      action-items.service.ts   # Action item completion tracking
     integrations/
       mcp/           # MCP client (auth.ts, client.ts, types.ts) -- routes through Agent Gateway
-    db/schema/       # Drizzle tables: users, sessions, notes, app_settings, user_google_tokens
+    db/schema/       # Drizzle tables: users, sessions, notes, app_settings, user_google_tokens, user_mcp_tokens, action_item_completions, team_resources, team_tools
     auth/            # Auth plugin, guards, Keycloak OIDC, sessions
-    config/          # Zod-validated environment config
+    config/          # Zod-validated environment config (with production guards for secrets)
   web/src/
     pages/           # Route components (lazy loaded via TanStack Router)
+      home.tsx               # Personal dashboard
+      accounts/              # Account list and detail pages
+      action-items/          # Action items with filter and completion tracking
+      opportunities/         # Kanban board with fiscal quarter filtering
+      tools/                 # Tools index + Ambient Calculator
+        ambient-calculator.tsx  # Sidecar-to-ambient migration calculator with PDF export
+        bug-report-parser.ts    # Client-side bug report parsing (YAML + describe formats)
+      insights/              # Portfolio analytics and AI insights
+      resources/             # Team-shared resources
+      meetings/              # Meeting briefs
+      search/                # Semantic search
+      settings/              # User management, integrations, preferences
     components/      # UI components (layout/, common/ incl. company-logo, feature-specific/)
     api/             # API client functions (queries/, mutations/)
     hooks/           # Custom React hooks
@@ -96,11 +123,16 @@ scripts/             # Database initialization scripts
 - **Company Logos:** `CompanyLogo` component (`components/common/company-logo.tsx`) renders company logos using Google Favicons API (`https://www.google.com/s2/favicons?domain={domain}&sz={size}`). Domain is derived from company name by stripping corporate suffixes (Inc, Corp, LLC, etc.) and appending `.com`. Falls back to a colored letter avatar on load error. Failed domains are tracked in a module-level `Set` so remounts skip the network request. Used on homepage account cards and accounts list table.
 - **Content Security Policy:** Production CSP in `app.ts` includes `img-src 'self' data: https://www.google.com https://*.gstatic.com` to allow Google Favicons (which redirect from `www.google.com` to `t0.gstatic.com`).
 - **Señor Bot (Chat Agent):** AI chat assistant available on all pages via floating widget. System prompt includes user's account list and pre-computed POC health ratings so it can answer portfolio questions without tool calls. MCP tool calls route through the Redis-cached service layer (`cachedCallTool()`) instead of hitting MCP directly. When the user has a connected Support Agent Tools integration, support MCP tools are merged into the available toolset and routed through `callSupportTool()` via Agent Gateway on :3002. Chat history persisted in Redis (7-day TTL).
-- **Key pages:** Home (personal dashboard with accounts + action items + company logos + POC health dots), Action Items (dedicated page with filter, open/completed sections), Accounts (list with company logos + detail with AI overview, action items, opportunities with POC health dots, POC status with health badge, grouped emails, calls, meetings, notes), Opportunities (kanban board with POC health dots, fiscal quarter filtering, My Accounts toggle), Meeting Brief (AI-generated meeting prep), Search (semantic search with inline call expansion), Settings (user management, integrations, AI status, cache, preferences).
+- **Ambient Calculator:** Tools page (`/tools`) includes the Ambient Calculator for estimating Istio sidecar-to-ambient mesh migration savings. Accepts bug report uploads (.tar.gz, .tgz, .zip) and parses cluster data client-side via `bug-report-parser.ts`. Supports two node file formats: YAML (`kubectl get nodes -o yaml`) and text (`kubectl describe nodes`). Streaming decompression on the server via `tar-stream` handles archives >4GB without hitting the V8 Buffer limit. Also supports async processing of send-solo.io links via background jobs. Instance pricing auto-fetched from AWS (vantage.sh), Azure (vantage.sh), and GCP (pricing YAML) APIs, cached 24h in Redis, with manual override. ROI = cumulative savings / cumulative investment (percentage ratio). Defaults: 3 waypoint replicas, 0.3 ztunnel CPU tax. Generates downloadable PDF reports.
+- **Bug Report Parsing:** Two parsers exist: (1) client-side `bug-report-parser.ts` (uses `fflate` for decompression, runs in browser) for direct file uploads, and (2) server-side `bug-report.service.ts` (uses `tar-stream` for streaming decompression) for send-solo.io link processing. Both extract 3 files per cluster: `cluster/cluster-context`, `cluster/nodes`, `cluster/k8s-resources`. The node parser detects format automatically — YAML NodeList or `kubectl describe nodes` text. The describe format parser extracts Labels (key=value), Capacity, and System Info sections line-by-line. YAML parsing has a fallback that strips annotations (which can contain unquoted JSON) before retrying.
+- **Instance Pricing:** `instance-pricing.service.ts` fetches on-demand pricing from cloud provider APIs. AWS and Azure use vantage.sh JSON API. GCP uses the public pricing YAML. Results cached 24h in Redis per provider+type+region key. The frontend auto-triggers pricing fetch when new unpriced instances are detected, but preserves any manual overrides.
+- **Team Resources & Tools:** CRUD endpoints for team-shared bookmarks (`/api/resources`) and tools (`/api/tools`), stored in PostgreSQL (`team_resources` and `team_tools` tables). Each entry has name, URL, optional description, and creator tracking.
+- **Insights Page:** Portfolio analytics page (`/insights`) with AI-generated insights across accounts.
+- **Key pages:** Home (personal dashboard with accounts + action items + company logos + POC health dots), Action Items (dedicated page with filter, open/completed sections), Accounts (list with company logos + detail with AI overview, action items, opportunities with POC health dots, POC status with health badge, grouped emails, calls, meetings, notes), Opportunities (kanban board with POC health dots, fiscal quarter filtering, My Accounts toggle), Tools (ambient calculator with PDF export), Insights (portfolio analytics), Resources (team-shared bookmarks), Meeting Brief (AI-generated meeting prep), Search (semantic search with inline call expansion), Settings (user management, integrations, AI status, cache, preferences).
 - **Token encryption:** Google OAuth tokens encrypted in `user_google_tokens` table via AES-256-GCM and a 32-byte ENCRYPTION_KEY.
 - **Telemetry Stack:** Deployed via `./k8s/deploy-telemetry.sh` into the `telemetry` namespace. Includes: Loki (logs), Tempo (traces), OTEL Collectors (traces on gRPC 4317, metrics, logs DaemonSet), kube-prometheus-stack (Prometheus + Grafana). Agent Gateway exports traces via `k8s/agentgateway-telemetry.yaml` (AgentgatewayParameters + PodMonitor). Grafana dashboards provisioned via `k8s/grafana-dashboards.yaml`. Access Grafana: `kubectl port-forward -n telemetry svc/kube-prometheus-stack-grafana 3001:80`. Cleanup: `./k8s/deploy-telemetry.sh --cleanup`.
 - **OpenTelemetry:** `instrumentation.ts` initializes `@opentelemetry/sdk-node` with auto-instrumentations, loaded via Node.js `--import` flag before the app starts. Traces HTTP incoming (Fastify), HTTP outgoing (MCP fetch, OpenAI via undici), and Redis (ioredis). fs/dns/net instrumentations disabled (noisy, low value). Uses gRPC exporter (`@opentelemetry/exporter-trace-otlp-grpc`) to send traces through the Agent Gateway's TCP :4317 listener, which forwards to the OTEL Collector in the `telemetry` namespace via an ExternalName Service, then on to Tempo. Conditional -- no-op when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset, so local dev without a collector works unchanged. Siesta traces join Agent Gateway traces in Grafana via distributed trace context propagation.
-- **Sensitive config:** MCP credentials (client ID, secret, server URL, auth URLs) have no hardcoded defaults -- they must be provided via environment variables or `.env` file. The `.env` file is in `.gitignore`.
+- **Sensitive config:** MCP credentials (client ID, secret, server URL, auth URLs) have no hardcoded defaults -- they must be provided via environment variables or `.env` file. The `.env` file is in `.gitignore`. `SESSION_SECRET` and `ENCRYPTION_KEY` have development-only defaults that the server explicitly rejects in production (`NODE_ENV=production`) with a fatal error.
 - **Production:** Single Docker container serves static frontend + API on port 3000. Kubernetes manifests in `k8s/`.
 
 ## API Endpoints
@@ -128,6 +160,15 @@ scripts/             # Database initialization scripts
 | GET | `/api/opportunities` | All opportunities (with account info) |
 | GET | `/api/interactions/search` | Semantic search |
 | GET | `/api/interactions/:accountId/:sourceType/:recordId` | Interaction detail |
+| POST | `/api/bug-report/jobs` | Create async bug report processing job |
+| GET | `/api/bug-report/jobs/:jobId` | Get bug report job status and results |
+| GET | `/api/pricing?provider=&types=&regions=` | Fetch cloud instance pricing |
+| GET | `/api/resources` | List team resources |
+| POST | `/api/resources` | Create team resource |
+| DELETE | `/api/resources/:id` | Delete team resource |
+| GET | `/api/tools` | List team tools |
+| POST | `/api/tools` | Create team tool |
+| DELETE | `/api/tools/:id` | Delete team tool |
 | GET | `/api/settings/google-status` | Google connection status |
 | POST | `/api/settings/google-config` | Save Google OAuth credentials (admin) |
 | DELETE | `/api/settings/google-config` | Remove Google OAuth credentials (admin) |
@@ -136,7 +177,7 @@ scripts/             # Database initialization scripts
 
 ## Environment Variables
 
-All sensitive values must be provided via `.env` (gitignored) or environment variables. No secrets have hardcoded defaults.
+All sensitive values must be provided via `.env` (gitignored) or environment variables. `SESSION_SECRET` and `ENCRYPTION_KEY` have development-only defaults; the server refuses to start in production if they are not overridden.
 
 ```
 # MCP (required -- via Agent Gateway)

@@ -36,4 +36,16 @@ try {
   process.exit(1);
 }
 
+// Guard against insecure defaults in production
+if (env.NODE_ENV === 'production') {
+  if (env.SESSION_SECRET === 'dev-secret-change-in-production') {
+    console.error('FATAL: SESSION_SECRET must be set in production (do not use the default)');
+    process.exit(1);
+  }
+  if (env.ENCRYPTION_KEY === '0000000000000000000000000000000000000000000000000000000000000000') {
+    console.error('FATAL: ENCRYPTION_KEY must be set in production (do not use the default)');
+    process.exit(1);
+  }
+}
+
 export { env };
