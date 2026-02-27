@@ -2260,6 +2260,26 @@ export default function AmbientCalculatorPage() {
         ))}
       </div>
 
+      {/* Navigation buttons */}
+      <div className="flex justify-between">
+        <button
+          type="button"
+          onClick={() => setActiveTab((t) => Math.max(0, t - 1))}
+          disabled={activeTab === 0}
+          className="rounded-lg border border-[#dedde4] dark:border-[#2a2734] px-4 py-2 text-sm font-medium text-[#6b677e] dark:text-[#858198] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f] transition-colors disabled:opacity-40"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab((t) => Math.min(TABS.length - 1, t + 1))}
+          disabled={activeTab === TABS.length - 1}
+          className="rounded-lg bg-[#6b26d9] dark:bg-[#8249df] px-4 py-2 text-sm font-medium text-white hover:bg-[#5a1fb8] dark:hover:bg-[#7040c0] transition-colors disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
+
       {/* Tab content */}
       {activeTab === 0 && <ConfigTab config={config} onChange={setConfig} />}
 
@@ -2299,26 +2319,6 @@ export default function AmbientCalculatorPage() {
       )}
 
       {activeTab === 3 && <ResultsTab results={results} config={config} />}
-
-      {/* Navigation buttons */}
-      <div className="flex justify-between pt-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab((t) => Math.max(0, t - 1))}
-          disabled={activeTab === 0}
-          className="rounded-lg border border-[#dedde4] dark:border-[#2a2734] px-4 py-2 text-sm font-medium text-[#6b677e] dark:text-[#858198] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f] transition-colors disabled:opacity-40"
-        >
-          Previous
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab((t) => Math.min(TABS.length - 1, t + 1))}
-          disabled={activeTab === TABS.length - 1}
-          className="rounded-lg bg-[#6b26d9] dark:bg-[#8249df] px-4 py-2 text-sm font-medium text-white hover:bg-[#5a1fb8] dark:hover:bg-[#7040c0] transition-colors disabled:opacity-40"
-        >
-          Next
-        </button>
-      </div>
     </div>
   );
 }
