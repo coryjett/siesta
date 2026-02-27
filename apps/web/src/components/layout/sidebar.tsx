@@ -228,17 +228,19 @@ export default function Sidebar({ onNavigate }: SidebarProps) {
       ) : null}
       {/* Expanded meetings: always on mobile, conditional on desktop */}
       <div className={clsx(
-        'border-t border-[#dedde4] dark:border-[#2a2734] px-3 pt-3 pb-2',
+        'border-t border-[#dedde4] dark:border-[#2a2734] px-3 pt-3 pb-2 min-h-0 flex flex-col overflow-hidden',
         collapsed ? 'md:hidden' : '',
       )}>
-        <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+        <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] shrink-0">
           Upcoming Meetings
         </p>
-        <UpcomingMeetingsSection />
+        <div className="overflow-y-auto min-h-0">
+          <UpcomingMeetingsSection />
+        </div>
       </div>
 
       {/* Spacer */}
-      <div className="flex-1 overflow-y-auto" />
+      <div className="flex-1" />
 
       {/* User section — always show on mobile, hide on desktop when collapsed */}
       {user && (
