@@ -627,14 +627,19 @@ export async function generateGongCallBrief(
   });
 }
 
+export interface ContactPersonalInfoEntry {
+  value: string;
+  date?: string; // ISO date of the call where this was mentioned
+}
+
 export interface ContactPersonalInfo {
-  location?: string;
-  interests?: string;
-  family?: string;
-  hobbies?: string;
-  background?: string;
-  travel?: string;
-  other?: string;
+  location?: ContactPersonalInfoEntry;
+  interests?: ContactPersonalInfoEntry;
+  family?: ContactPersonalInfoEntry;
+  hobbies?: ContactPersonalInfoEntry;
+  background?: ContactPersonalInfoEntry;
+  travel?: ContactPersonalInfoEntry;
+  other?: ContactPersonalInfoEntry;
 }
 
 export interface ContactInsight {
@@ -675,10 +680,18 @@ export async function generateContactInsights(
       const contactNames = contactsArr.map((c) => String(c.name ?? '')).filter(Boolean);
       if (contactNames.length === 0) return [];
 
-      // Get unique call titles, limit to 15 most recent
+      // Build a map of call title -> date for timestamping
+      const callDateMap = new Map<string, string>();
+      for (const c of callsArr) {
+        const title = String(c.title ?? '');
+        const date = String(c.date ?? '');
+        if (title && date) callDateMap.set(title, date);
+      }
+
+      // Get unique call titles, limit to 50 most recent
       const callTitles = [...new Set(
         callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
-      )].slice(0, 15);
+      )].slice(0, 50);
 
       if (callTitles.length === 0) return [];
 
@@ -687,22 +700,23 @@ export async function generateContactInsights(
         callTitles.map(async (title) => {
           const data = await fetchFullGongTranscript(accountId, title).catch(() => null);
           if (!data?.transcript) return null;
-          // Truncate individual transcripts to ~10000 chars if needed
-          const text = data.transcript.length > 10000
-            ? data.transcript.slice(0, 10000) + '\n[...truncated]'
+          // Truncate individual transcripts to ~20000 chars if needed
+          const text = data.transcript.length > 20000
+            ? data.transcript.slice(0, 20000) + '\n[...truncated]'
             : data.transcript;
-          return { title, text };
+          const date = callDateMap.get(title) ?? '';
+          return { title, text, date };
         }),
       );
 
       const validTranscripts = transcripts.filter(
-        (t): t is { title: string; text: string } => t !== null,
+        (t): t is { title: string; text: string; date: string } => t !== null,
       );
 
       if (validTranscripts.length === 0) return [];
 
       const transcriptText = validTranscripts
-        .map((t) => `--- Call: "${t.title}" ---\n${t.text}`)
+        .map((t) => `--- Call: "${t.title}" (${t.date || 'unknown date'}) ---\n${t.text}`)
         .join('\n\n');
 
       logger.info(
@@ -716,15 +730,15 @@ export async function generateContactInsights(
           {
             role: 'system',
             content:
-              'You are a sales engineering assistant. Given Gong call transcripts and a list of contact names, extract personal details mentioned in casual conversation and small talk. Look for mentions of:\n\n- Location: where they live or are based\n- Interests: things they are interested in or enthusiastic about\n- Family: mentions of spouse, children, family events\n- Hobbies: activities they do outside work\n- Background: career history, education, previous companies\n- Travel: upcoming trips, vacations, places visited\n- Other: any other personal details worth remembering for rapport building\n\nOnly include contacts where you found personal information. Only include fields where you have concrete information — do not guess or infer. Each field value should be a concise sentence or phrase.\n\nReturn a JSON array of objects with this structure:\n[\n  {\n    "contactName": "Full Name",\n    "personalInfo": {\n      "location": "...",\n      "interests": "...",\n      "family": "...",\n      "hobbies": "...",\n      "background": "...",\n      "travel": "...",\n      "other": "..."\n    },\n    "sourceCallTitles": ["Call Title 1", "Call Title 2"]\n  }\n]\n\nOnly include fields in personalInfo that have actual data. sourceCallTitles should list which calls the information came from. If no personal information is found for any contact, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
+              'You are a sales engineering assistant. Given Gong call transcripts and a list of contact names, extract personal details mentioned in casual conversation and small talk. Look carefully through ALL transcripts for ANY personal information. Be thorough — even brief mentions are valuable for rapport building. Look for mentions of:\n\n- Location: where they live, are based, or mentioned being from\n- Interests: things they mentioned being interested in or enthusiastic about\n- Family: mentions of spouse, partner, children, pets, family events\n- Hobbies: activities they do outside work, sports, games, etc.\n- Background: career history, education, previous companies, certifications\n- Travel: upcoming trips, vacations, places visited, conferences attended\n- Other: any other personal details worth remembering (favorite food, sports teams, etc.)\n\nOnly include contacts where you found personal information. Only include fields where you have concrete information — do not guess or infer. For each field, provide the value AND the date of the call where it was most recently mentioned.\n\nReturn a JSON array of objects with this structure:\n[\n  {\n    "contactName": "Full Name",\n    "personalInfo": {\n      "location": { "value": "Based in Austin, TX", "date": "2025-03-15" },\n      "interests": { "value": "Kubernetes and cloud-native technologies", "date": "2025-04-01" },\n      "family": { "value": "Has two kids", "date": "2025-02-20" }\n    },\n    "sourceCallTitles": ["Call Title 1", "Call Title 2"]\n  }\n]\n\nEach field in personalInfo should be an object with "value" (concise sentence or phrase) and "date" (ISO date from the call header where this was mentioned, e.g. "2025-03-15"). Use the most recent mention date if mentioned in multiple calls. Only include fields in personalInfo that have actual data. sourceCallTitles should list which calls the information came from. If no personal information is found for any contact, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
           },
           {
             role: 'user',
-            content: `Extract personal insights about these contacts from the call transcripts below.\n\nContacts: ${contactNames.join(', ')}\n\n${transcriptText}`,
+            content: `Extract personal insights about these contacts from the call transcripts below. Be thorough — scan all transcripts for any personal details, even brief mentions.\n\nContacts: ${contactNames.join(', ')}\n\n${transcriptText}`,
           },
         ],
-        temperature: 0.2,
-        max_tokens: 2500,
+        temperature: 0.3,
+        max_tokens: 8000,
       });
 
       const raw = response.choices[0]?.message?.content?.trim() ?? '[]';
@@ -735,13 +749,29 @@ export async function generateContactInsights(
 
       return parsed
         .filter((item: Record<string, unknown>) => item.contactName && item.personalInfo)
-        .map((item: Record<string, unknown>) => ({
-          contactName: String(item.contactName),
-          personalInfo: item.personalInfo as ContactPersonalInfo,
-          sourceCallTitles: Array.isArray(item.sourceCallTitles)
-            ? (item.sourceCallTitles as string[]).map(String)
-            : [],
-        }));
+        .map((item: Record<string, unknown>) => {
+          const rawInfo = item.personalInfo as Record<string, unknown>;
+          // Normalize personalInfo — handle both old format (string) and new format ({ value, date })
+          const normalizedInfo: ContactPersonalInfo = {};
+          for (const [key, val] of Object.entries(rawInfo)) {
+            if (!val) continue;
+            if (typeof val === 'string') {
+              (normalizedInfo as Record<string, ContactPersonalInfoEntry>)[key] = { value: val };
+            } else if (typeof val === 'object' && val !== null && 'value' in val) {
+              (normalizedInfo as Record<string, ContactPersonalInfoEntry>)[key] = {
+                value: String((val as Record<string, unknown>).value),
+                date: (val as Record<string, unknown>).date ? String((val as Record<string, unknown>).date) : undefined,
+              };
+            }
+          }
+          return {
+            contactName: String(item.contactName),
+            personalInfo: normalizedInfo,
+            sourceCallTitles: Array.isArray(item.sourceCallTitles)
+              ? (item.sourceCallTitles as string[]).map(String)
+              : [],
+          };
+        });
     } catch (err) {
       logger.error({ err }, 'Failed to generate contact insights with OpenAI');
       return [];

@@ -16,7 +16,7 @@ import {
   useUncompleteActionItem,
   useContactInsights,
 } from '../../api/queries/accounts';
-import type { ActionItem, ContactInsight } from '../../api/queries/accounts';
+import type { ActionItem, ContactInsight, ContactPersonalInfoEntry } from '../../api/queries/accounts';
 import { useAuth } from '../../contexts/auth-context';
 import { useInteractionDetail } from '../../api/queries/interactions';
 import { PageLoading } from '../../components/common/loading';
@@ -983,14 +983,24 @@ function ContactsSection({
                   {isInsightExpanded && insight && infoEntries.length > 0 && (
                     <div className="mt-2 ml-12 rounded-lg bg-[#f8f7fa] dark:bg-[#1e1b2e] p-3 text-xs">
                       <div className="space-y-1.5">
-                        {infoEntries.map(([key, value]) => (
-                          <div key={key} className="flex gap-2">
-                            <span className="font-medium text-[#191726] dark:text-[#f2f2f2] shrink-0">
-                              {INSIGHT_LABELS[key] ?? key}:
-                            </span>
-                            <span className="text-[#6b677e] dark:text-[#858198]">{value}</span>
-                          </div>
-                        ))}
+                        {infoEntries.map(([key, value]) => {
+                          const entry = (typeof value === 'string' ? { value } : value) as ContactPersonalInfoEntry;
+                          return (
+                            <div key={key} className="flex gap-2">
+                              <span className="font-medium text-[#191726] dark:text-[#f2f2f2] shrink-0">
+                                {INSIGHT_LABELS[key] ?? key}:
+                              </span>
+                              <span className="text-[#6b677e] dark:text-[#858198]">
+                                {entry.value}
+                                {entry.date && (
+                                  <span className="ml-1.5 text-[10px] text-[#9e9ab0] dark:text-[#6b677e]">
+                                    ({formatDate(entry.date)})
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                       <p className="mt-2 text-[10px] text-[#9e9ab0] dark:text-[#6b677e]">
                         from {insight.sourceCallTitles.length} call{insight.sourceCallTitles.length !== 1 ? 's' : ''}

@@ -51,6 +51,33 @@ export async function resourcesRoutes(app: FastifyInstance) {
     return reply.status(201).send(row);
   });
 
+  app.patch<{
+    Params: { id: string };
+    Body: { name?: string; url?: string; description?: string };
+  }>('/api/resources/:id', async (request, reply) => {
+    const { name, url, description } = request.body;
+    const updates: Record<string, string | null> = {};
+    if (name !== undefined) updates.name = name;
+    if (url !== undefined) updates.url = url;
+    if (description !== undefined) updates.description = description || null;
+
+    if (Object.keys(updates).length === 0) {
+      return reply.status(400).send({ error: 'No fields to update' });
+    }
+
+    const [row] = await db
+      .update(teamResources)
+      .set(updates)
+      .where(eq(teamResources.id, request.params.id))
+      .returning();
+
+    if (!row) {
+      return reply.status(404).send({ error: 'Resource not found' });
+    }
+
+    return reply.send(row);
+  });
+
   app.delete<{ Params: { id: string } }>(
     '/api/resources/:id',
     async (request, reply) => {

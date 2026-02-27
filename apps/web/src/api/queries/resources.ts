@@ -28,6 +28,17 @@ export function useCreateResource() {
   });
 }
 
+export function useUpdateResource() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; url?: string; description?: string }) =>
+      api.patch<Resource>(`/resources/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['resources'] });
+    },
+  });
+}
+
 export function useDeleteResource() {
   const queryClient = useQueryClient();
   return useMutation({

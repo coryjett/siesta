@@ -216,14 +216,19 @@ export function useMeetingBrief(accountId: string | undefined, title: string | u
   });
 }
 
+export interface ContactPersonalInfoEntry {
+  value: string;
+  date?: string;
+}
+
 export interface ContactPersonalInfo {
-  location?: string;
-  interests?: string;
-  family?: string;
-  hobbies?: string;
-  background?: string;
-  travel?: string;
-  other?: string;
+  location?: ContactPersonalInfoEntry;
+  interests?: ContactPersonalInfoEntry;
+  family?: ContactPersonalInfoEntry;
+  hobbies?: ContactPersonalInfoEntry;
+  background?: ContactPersonalInfoEntry;
+  travel?: ContactPersonalInfoEntry;
+  other?: ContactPersonalInfoEntry;
 }
 
 export interface ContactInsight {
