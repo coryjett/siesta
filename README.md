@@ -105,11 +105,11 @@ Sales Engineering portfolio management platform powered by MCP (Model Context Pr
 - **Portfolio Dashboard** -- Personal view of accounts with POC health indicators, action items, and open pipeline stats
 - **Account Detail** -- AI-generated summaries, POC status with health ratings, grouped email threads, Gong call briefs, meetings, notes
 - **Ambient Calculator** -- Upload Kubernetes bug reports (.tar.gz, .tgz, .zip) to calculate sidecar-to-ambient mesh migration savings with PDF export. Supports both YAML and `kubectl describe nodes` formats. Auto-fetches cloud instance pricing (AWS, Azure, GCP) with manual override. ROI calculated as cumulative savings / cumulative investment ratio.
-- **Action Items** -- AI-extracted action items from Gong calls and interactions with completion tracking
+- **Action Items** -- AI-extracted action items from Gong calls and interactions with completion tracking. Incremental extraction avoids re-analyzing previously processed calls.
 - **Opportunities** -- Kanban board with fiscal quarter filtering and POC health dots
 - **Meeting Briefs** -- AI-generated prep briefs with talking points and context
 - **Team Resources & Tools** -- Shared bookmarks and tool links for the SE team
-- **Insights** -- Portfolio analytics and AI-generated insights
+- **Insights** -- Portfolio analytics and AI-generated insights including competitive analysis (competitor mentions, product alignment, competitive threats)
 - **Señor Bot** -- AI chat assistant with MCP tool access and support integration
 - **Semantic Search** -- Full-text search across all interactions with inline expansion
 
@@ -167,19 +167,92 @@ The `siesta-secret` must contain (see `k8s/secret.yaml.tpl` for the template):
 - `MCP_GATEWAY_API_KEY` -- Must match the agent gateway API key secret
 - `OPENAI_API_KEY` -- OpenAI API key (optional -- enables AI features)
 
-### 2. Deploy PostgreSQL (CloudNativePG)
+### 2. Set up GCS backup bucket (one-time)
+
+Before deploying PostgreSQL, create the GCP resources for automated backups:
+
+```bash
+# Create the GCS bucket
+gcloud storage buckets create gs://siesta-db-backups \
+  --location=us-central1 --uniform-bucket-level-access
+
+# Create the GCP service account
+gcloud iam service-accounts create siesta-cnpg-backup \
+  --project=field-engineering-us \
+  --display-name="CNPG Backup SA"
+
+# Grant the SA access to the bucket
+gcloud storage buckets add-iam-policy-binding gs://siesta-db-backups \
+  --member="serviceAccount:siesta-cnpg-backup@field-engineering-us.iam.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin"
+
+# Bind Workload Identity (KSA -> GSA)
+gcloud iam service-accounts add-iam-policy-binding \
+  siesta-cnpg-backup@field-engineering-us.iam.gserviceaccount.com \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="serviceAccount:field-engineering-us.svc.id.goog[siesta/postgres-cnpg]"
+```
+
+### 3. Deploy PostgreSQL (CloudNativePG)
 
 ```bash
 kubectl apply -f k8s/postgres-cnpg.yaml
 ```
 
-### 3. Deploy Redis
+This creates a 3-instance PostgreSQL 16 cluster with:
+- **Automated backups** to GCS (`gs://siesta-db-backups/cnpg`) via Barman
+- **Daily scheduled backups** at 3 AM UTC with 30-day retention
+- **Continuous WAL archiving** for point-in-time recovery
+- **GKE Workload Identity** for keyless GCS authentication (service account: `siesta-cnpg-backup@field-engineering-us.iam.gserviceaccount.com`)
+
+Manual backup:
+```bash
+kubectl apply -f - <<EOF
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: siesta-manual-$(date +%Y%m%d-%H%M%S)
+  namespace: siesta
+spec:
+  cluster:
+    name: postgres-cnpg
+  method: barmanObjectStore
+EOF
+```
+
+Recovery from backup (create a new cluster with `recovery` bootstrap):
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-cnpg-restored
+  namespace: siesta
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  bootstrap:
+    recovery:
+      source: postgres-cnpg-backup
+      recoveryTarget:
+        targetTime: "2026-02-27T10:00:00Z"  # optional point-in-time
+  externalClusters:
+    - name: postgres-cnpg-backup
+      barmanObjectStore:
+        destinationPath: gs://siesta-db-backups/cnpg
+        googleCredentials:
+          gkeEnvironment: true
+  # ... same postgresql, resources, storage, affinity config as original
+```
+
+After recovery, update `DATABASE_URL` in `siesta-secret` to point to `postgres-cnpg-restored-rw` and restart the app.
+
+### 4. Deploy Redis
 
 ```bash
 kubectl apply -f k8s/redis.yaml
 ```
 
-### 4. Install cert-manager
+### 5. Install cert-manager
 
 ```bash
 helm install cert-manager jetstack/cert-manager \
@@ -201,7 +274,7 @@ Apply the ClusterIssuer and Certificate:
 kubectl apply -f k8s/cert-manager.yaml
 ```
 
-### 5. Deploy Agent Gateway
+### 6. Deploy Agent Gateway
 
 Create the API key secret:
 ```bash
@@ -231,7 +304,7 @@ This creates:
 - **ExternalName Service** `otel-collector-traces` bridging to telemetry namespace
 - **AgentgatewayPolicy** with API key auth on MCP listeners only
 
-### 6. Deploy Telemetry Stack (OTEL, Tempo, Grafana)
+### 7. Deploy Telemetry Stack (OTEL, Tempo, Grafana)
 
 ```bash
 ./k8s/deploy-telemetry.sh
@@ -256,7 +329,7 @@ kubectl port-forward -n telemetry svc/kube-prometheus-stack-grafana 3001:80
 
 To tear down: `./k8s/deploy-telemetry.sh --cleanup`
 
-### 7. Deploy Siesta
+### 8. Deploy Siesta
 
 ```bash
 npm run build
@@ -266,7 +339,7 @@ docker push us-central1-docker.pkg.dev/field-engineering-us/siesta/siesta:latest
 kubectl apply -f k8s/app.yaml
 ```
 
-### 8. Configure DNS
+### 9. Configure DNS
 
 Point your domain to the agent gateway LoadBalancer IP:
 ```bash
