@@ -307,8 +307,10 @@ function ResourceRow({ resource, availableTags, onTagClick }: { resource: Resour
     );
   }
 
+  const isExpanded = expanded && resource.type === 'markdown' && !!resource.content;
+
   return (
-    <div className="group rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-4 flex flex-col">
+    <div className={`group rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-4 flex flex-col ${isExpanded ? 'col-span-full' : ''}`}>
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#6b26d9]/10 dark:bg-[#8249df]/20">
           <ResourceTypeIcon type={resource.type} className="text-[#6b26d9] dark:text-[#8249df]" />
@@ -398,11 +400,11 @@ function ResourceRow({ resource, availableTags, onTagClick }: { resource: Resour
 
       <TagPills tags={resource.tags} small onTagClick={onTagClick} />
 
-      {/* Expanded markdown content */}
-      {resource.type === 'markdown' && expanded && resource.content && (
+      {/* Expanded markdown content — spans full width */}
+      {isExpanded && (
         <div className="mt-3">
-          <div className="rounded-lg border border-[#dedde4] dark:border-[#2a2734] bg-[#f7f6fa] dark:bg-[#1a1825] p-4 prose prose-sm dark:prose-invert max-w-none text-[#191726] dark:text-[#f2f2f2]">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{resource.content}</ReactMarkdown>
+          <div className="rounded-lg border border-[#dedde4] dark:border-[#2a2734] bg-[#f7f6fa] dark:bg-[#1a1825] p-6 prose prose-sm dark:prose-invert max-w-none text-[#191726] dark:text-[#f2f2f2]">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{resource.content!}</ReactMarkdown>
           </div>
         </div>
       )}
