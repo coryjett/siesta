@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { env } from '../config/env.js';
-import { cachedCall, getCache, invalidateCache } from './cache.service.js';
+import { cachedCall, getCache, invalidateCache, getRedisClient } from './cache.service.js';
 import { logger } from '../utils/logger.js';
 import { callTool } from '../integrations/mcp/client.js';
 import { hashActionItem } from '../utils/hash.js';
@@ -237,10 +237,24 @@ export interface ActionItem {
 }
 
 /**
+ * Internal cache shape that tracks which interactions have already been
+ * analyzed so we can do incremental extraction on new calls/emails only.
+ */
+interface ActionItemsCacheEntry {
+  items: ActionItem[];
+  analyzedCallTitles: string[];
+  analyzedEmailIds: string[];
+}
+
+/**
  * Extract action items / follow-ups from recent Gong calls and emails.
  * Uses full AI-generated Gong briefs (cached indefinitely) and email
  * content to give OpenAI rich context for identifying commitments,
- * follow-ups, and next steps. Cached 1 hour.
+ * follow-ups, and next steps.
+ *
+ * Incremental: only analyzes interactions that haven't been analyzed yet,
+ * then merges new items with existing ones. Cached indefinitely per account,
+ * invalidated when new Gong calls are discovered by periodic refresh.
  */
 export async function extractActionItems(
   accountId: string,
@@ -253,144 +267,187 @@ export async function extractActionItems(
 
   const cacheKey = `openai:action-items:${accountId}`;
 
-  // Indefinite TTL — invalidated when new Gong calls are discovered by periodic refresh.
-  return cachedCall<ActionItem[]>(cacheKey, 0, async () => {
-    try {
-      // Fetch calls and emails separately so we can use full briefs for calls
-      const [calls, emails] = await Promise.all([
-        getAccountInteractions(accountId, { sourceTypes: ['gong_call'] }).catch(() => []),
-        getAccountInteractions(accountId, { sourceTypes: ['gmail_email'], limit: 15 }).catch(() => []),
-      ]);
+  // Check for existing cached entry with analyzed interaction tracking
+  const existing = await getCache<ActionItemsCacheEntry>(cacheKey);
 
-      const callsArr = calls as Array<Record<string, unknown>>;
-      const emailsArr = emails as Array<Record<string, unknown>>;
+  try {
+    // Fetch calls and emails separately so we can use full briefs for calls
+    const [calls, emails] = await Promise.all([
+      getAccountInteractions(accountId, { sourceTypes: ['gong_call'] }).catch(() => []),
+      getAccountInteractions(accountId, { sourceTypes: ['gmail_email'], limit: 15 }).catch(() => []),
+    ]);
 
-      if (callsArr.length === 0 && emailsArr.length === 0) return [];
+    const callsArr = calls as Array<Record<string, unknown>>;
+    const emailsArr = emails as Array<Record<string, unknown>>;
 
-      const isMcpError = (text: string): boolean => {
-        if (!text || text.length > 200) return false;
-        const lower = text.toLowerCase().trim();
-        return lower.includes('no rows in result set') || lower.startsWith('error:') || lower === 'not found';
-      };
-
-      const sections: string[] = [];
-
-      // Gong calls — use briefs + full transcripts for deeper action item extraction
-      const callTitles = [...new Set(
-        callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
-      )].slice(0, 10);
-
-      if (callTitles.length > 0) {
-        const gongData = await Promise.all(
-          callTitles.map(async (title) => {
-            const call = callsArr.find((c) => String(c.title ?? '') === title);
-            const callDate = String(call?.date ?? '');
-            const callRecordId = String(call?.id ?? call?.record_id ?? '');
-            const [brief, transcript] = await Promise.all([
-              generateGongCallBrief(accountId, title).catch(() => null),
-              fetchFullGongTranscript(accountId, title).catch(() => null),
-            ]);
-            if (!brief && !transcript) return null;
-            const parts: string[] = [`--- Call [sourceType=gong_call, recordId=${callRecordId}]: "${title}" (${callDate}) ---`];
-            if (brief) parts.push(`Brief:\n${brief}`);
-            if (transcript?.transcript) {
-              const text = transcript.transcript.length > 3000
-                ? transcript.transcript.slice(0, 3000) + '\n[...truncated]'
-                : transcript.transcript;
-              parts.push(`Transcript:\n${text}`);
-            }
-            return parts.join('\n');
-          }),
-        );
-        const validCalls = gongData.filter(Boolean);
-        if (validCalls.length > 0) {
-          sections.push(validCalls.join('\n\n'));
-        }
-      }
-
-      // Emails — fetch content via getInteractionDetail
-      if (emailsArr.length > 0) {
-        const emailDetails = await Promise.all(
-          emailsArr.slice(0, 10).map(async (i) => {
-            const recordId = String(i.id ?? '');
-            const title = String(i.title ?? '');
-            const date = String(i.date ?? '');
-            if (!recordId) return null;
-            try {
-              const detail = await getInteractionDetail(accountId, 'gmail_email', recordId);
-              const content = String(detail?.content ?? '');
-              if (content && !isMcpError(content)) {
-                const participants = ((detail?.participants ?? []) as Array<{ name: string; email: string | null }>)
-                  .map((p) => p.name || p.email || 'unknown')
-                  .join(', ');
-                return `--- Email [sourceType=gmail_email, recordId=${recordId}]: "${title}" (${date}) ---\nParticipants: ${participants || 'unknown'}\n\n${content}`;
-              }
-            } catch { /* skip */ }
-            // Fallback to preview
-            const preview = String(i.preview ?? '');
-            return preview ? `--- Email [sourceType=gmail_email, recordId=${recordId}]: "${title}" (${date}) ---\n${preview}` : null;
-          }),
-        );
-        const validEmails = emailDetails.filter(Boolean);
-        if (validEmails.length > 0) {
-          sections.push(validEmails.join('\n\n'));
-        }
-      }
-
-      if (sections.length === 0) return [];
-
-      logger.info(
-        { accountId, calls: callTitles.length, emails: emailsArr.length },
-        '[action-items] Sending to OpenAI',
-      );
-
-      const response = await client.chat.completions.create({
-        model: env.OPENAI_MODEL,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a sales engineering assistant. Given Gong call briefs, full call transcripts, and email threads from customer interactions, extract specific follow-up items and action items that our team needs to act on.\n\nFocus on:\n- Things our team committed to doing (deliverables, demos, docs, follow-up calls)\n- Customer requests or asks that need a response\n- Next steps agreed upon in calls or emails\n- Open questions that need answers\n- Deadlines or time-sensitive commitments\n- Verbal commitments or promises made during calls (use the full transcript for these)\n\nEach interaction is tagged with [sourceType=..., recordId=...] in its header. You MUST include these exact values in your response for each action item.\n\nReturn a JSON array of action items. Each item must have:\n- "action": concise description of what needs to be done\n- "source": the title of the call or email where this was identified\n- "sourceType": the sourceType tag from the interaction header (e.g. "gong_call", "gmail_email")\n- "recordId": the recordId tag from the interaction header\n- "date": the date of that interaction (ISO format)\n- "owner": who on our team is responsible (name if mentioned, null if unclear)\n- "status": always "open"\n\nOnly include concrete, actionable items — not vague observations. Prioritize items from the most recent interactions. Use the full transcripts to catch action items that may have been missed in the briefs. If no action items are found, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
-          },
-          {
-            role: 'user',
-            content: `Extract follow-up items and action items from these recent interactions:\n\n${sections.join('\n\n')}`,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 2000,
-      });
-
-      const raw = response.choices[0]?.message?.content?.trim() ?? '[]';
-      // Strip markdown fences if present
-      const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-      const parsed = JSON.parse(jsonStr);
-
-      if (!Array.isArray(parsed)) return [];
-
-      return parsed.map((item: Record<string, unknown>) => {
-        const action = String(item.action ?? '');
-        const source = String(item.source ?? '');
-        const date = String(item.date ?? '');
-        const sourceType = String(item.sourceType ?? '');
-        const recordId = item.recordId ? String(item.recordId) : null;
-        return {
-          id: hashActionItem(accountId, action, source, date, sourceType, recordId ?? undefined),
-          action,
-          source,
-          sourceType,
-          recordId,
-          date,
-          owner: item.owner ? String(item.owner) : null,
-          status: 'open' as const,
-          completedAt: null,
-        };
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to extract action items with OpenAI');
-      return [];
+    if (callsArr.length === 0 && emailsArr.length === 0) {
+      return existing?.items ?? [];
     }
-  });
+
+    const analyzedCallTitles = new Set(existing?.analyzedCallTitles ?? []);
+    const analyzedEmailIds = new Set(existing?.analyzedEmailIds ?? []);
+
+    // Filter to only new (unanalyzed) interactions
+    const allCallTitles = [...new Set(
+      callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
+    )].slice(0, 10);
+    const newCallTitles = allCallTitles.filter((t) => !analyzedCallTitles.has(t));
+
+    const allEmailIds = emailsArr.slice(0, 10).map((e) => String(e.id ?? '')).filter(Boolean);
+    const newEmails = emailsArr.slice(0, 10).filter((e) => {
+      const id = String(e.id ?? '');
+      return id && !analyzedEmailIds.has(id);
+    });
+
+    // If everything has already been analyzed, return cached items
+    if (newCallTitles.length === 0 && newEmails.length === 0) {
+      return existing?.items ?? [];
+    }
+
+    const isMcpError = (text: string): boolean => {
+      if (!text || text.length > 200) return false;
+      const lower = text.toLowerCase().trim();
+      return lower.includes('no rows in result set') || lower.startsWith('error:') || lower === 'not found';
+    };
+
+    const sections: string[] = [];
+
+    // Gong calls — only new ones
+    if (newCallTitles.length > 0) {
+      const gongData = await Promise.all(
+        newCallTitles.map(async (title) => {
+          const call = callsArr.find((c) => String(c.title ?? '') === title);
+          const callDate = String(call?.date ?? '');
+          const callRecordId = String(call?.id ?? call?.record_id ?? '');
+          const [brief, transcript] = await Promise.all([
+            generateGongCallBrief(accountId, title).catch(() => null),
+            fetchFullGongTranscript(accountId, title).catch(() => null),
+          ]);
+          if (!brief && !transcript) return null;
+          const parts: string[] = [`--- Call [sourceType=gong_call, recordId=${callRecordId}]: "${title}" (${callDate}) ---`];
+          if (brief) parts.push(`Brief:\n${brief}`);
+          if (transcript?.transcript) {
+            const text = transcript.transcript.length > 3000
+              ? transcript.transcript.slice(0, 3000) + '\n[...truncated]'
+              : transcript.transcript;
+            parts.push(`Transcript:\n${text}`);
+          }
+          return parts.join('\n');
+        }),
+      );
+      const validCalls = gongData.filter(Boolean);
+      if (validCalls.length > 0) {
+        sections.push(validCalls.join('\n\n'));
+      }
+    }
+
+    // Emails — only new ones
+    if (newEmails.length > 0) {
+      const emailDetails = await Promise.all(
+        newEmails.map(async (i) => {
+          const recordId = String(i.id ?? '');
+          const title = String(i.title ?? '');
+          const date = String(i.date ?? '');
+          if (!recordId) return null;
+          try {
+            const detail = await getInteractionDetail(accountId, 'gmail_email', recordId);
+            const content = String(detail?.content ?? '');
+            if (content && !isMcpError(content)) {
+              const participants = ((detail?.participants ?? []) as Array<{ name: string; email: string | null }>)
+                .map((p) => p.name || p.email || 'unknown')
+                .join(', ');
+              return `--- Email [sourceType=gmail_email, recordId=${recordId}]: "${title}" (${date}) ---\nParticipants: ${participants || 'unknown'}\n\n${content}`;
+            }
+          } catch { /* skip */ }
+          // Fallback to preview
+          const preview = String(i.preview ?? '');
+          return preview ? `--- Email [sourceType=gmail_email, recordId=${recordId}]: "${title}" (${date}) ---\n${preview}` : null;
+        }),
+      );
+      const validEmails = emailDetails.filter(Boolean);
+      if (validEmails.length > 0) {
+        sections.push(validEmails.join('\n\n'));
+      }
+    }
+
+    if (sections.length === 0) {
+      // New interactions found but no usable content — return existing items
+      return existing?.items ?? [];
+    }
+
+    logger.info(
+      { accountId, newCalls: newCallTitles.length, newEmails: newEmails.length, existingItems: existing?.items.length ?? 0 },
+      '[action-items] Analyzing new interactions only (incremental)',
+    );
+
+    const response = await client.chat.completions.create({
+      model: env.OPENAI_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a sales engineering assistant. Given Gong call briefs, full call transcripts, and email threads from customer interactions, extract specific follow-up items and action items that our team needs to act on.\n\nFocus on:\n- Things our team committed to doing (deliverables, demos, docs, follow-up calls)\n- Customer requests or asks that need a response\n- Next steps agreed upon in calls or emails\n- Open questions that need answers\n- Deadlines or time-sensitive commitments\n- Verbal commitments or promises made during calls (use the full transcript for these)\n\nEach interaction is tagged with [sourceType=..., recordId=...] in its header. You MUST include these exact values in your response for each action item.\n\nReturn a JSON array of action items. Each item must have:\n- "action": concise description of what needs to be done\n- "source": the title of the call or email where this was identified\n- "sourceType": the sourceType tag from the interaction header (e.g. "gong_call", "gmail_email")\n- "recordId": the recordId tag from the interaction header\n- "date": the date of that interaction (ISO format)\n- "owner": who on our team is responsible (name if mentioned, null if unclear)\n- "status": always "open"\n\nOnly include concrete, actionable items — not vague observations. Prioritize items from the most recent interactions. Use the full transcripts to catch action items that may have been missed in the briefs. If no action items are found, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
+        },
+        {
+          role: 'user',
+          content: `Extract follow-up items and action items from these recent interactions:\n\n${sections.join('\n\n')}`,
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 2000,
+    });
+
+    const raw = response.choices[0]?.message?.content?.trim() ?? '[]';
+    // Strip markdown fences if present
+    const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+    const parsed = JSON.parse(jsonStr);
+
+    const newItems: ActionItem[] = Array.isArray(parsed)
+      ? parsed.map((item: Record<string, unknown>) => {
+          const action = String(item.action ?? '');
+          const source = String(item.source ?? '');
+          const date = String(item.date ?? '');
+          const sourceType = String(item.sourceType ?? '');
+          const recordId = item.recordId ? String(item.recordId) : null;
+          return {
+            id: hashActionItem(accountId, action, source, date, sourceType, recordId ?? undefined),
+            action,
+            source,
+            sourceType,
+            recordId,
+            date,
+            owner: item.owner ? String(item.owner) : null,
+            status: 'open' as const,
+            completedAt: null,
+          };
+        })
+      : [];
+
+    // Merge: existing items + new items, deduplicate by id
+    const existingItems = existing?.items ?? [];
+    const itemsById = new Map<string, ActionItem>();
+    for (const item of existingItems) itemsById.set(item.id, item);
+    for (const item of newItems) itemsById.set(item.id, item);
+    const mergedItems = [...itemsById.values()];
+
+    // Update the tracked set of analyzed interactions
+    const updatedEntry: ActionItemsCacheEntry = {
+      items: mergedItems,
+      analyzedCallTitles: [...new Set([...analyzedCallTitles, ...allCallTitles])],
+      analyzedEmailIds: [...new Set([...analyzedEmailIds, ...allEmailIds])],
+    };
+
+    // Cache indefinitely (TTL 0)
+    const redis = getRedisClient();
+    if (redis) {
+      await redis.set(cacheKey, JSON.stringify(updatedEntry));
+    }
+
+    return mergedItems;
+  } catch (err) {
+    logger.error({ err }, 'Failed to extract action items with OpenAI');
+    return existing?.items ?? [];
+  }
 }
 
 /**
@@ -643,6 +700,8 @@ export interface ContactPersonalInfo {
   hobbies?: ContactPersonalInfoEntry;
   background?: ContactPersonalInfoEntry;
   travel?: ContactPersonalInfoEntry;
+  engagement_style?: ContactPersonalInfoEntry;
+  concerns?: ContactPersonalInfoEntry;
   other?: ContactPersonalInfoEntry;
 }
 
@@ -734,7 +793,7 @@ export async function generateContactInsights(
           {
             role: 'system',
             content:
-              'You are a sales engineering assistant. Given Gong call transcripts and a list of contact names, extract personal details mentioned in casual conversation and small talk. Look carefully through ALL transcripts for ANY personal information. Be thorough — even brief mentions are valuable for rapport building. Look for mentions of:\n\n- Location: where they live, are based, or mentioned being from\n- Interests: things they mentioned being interested in or enthusiastic about\n- Family: mentions of spouse, partner, children, pets, family events\n- Hobbies: activities they do outside work, sports, games, etc.\n- Background: career history, education, previous companies, certifications\n- Travel: upcoming trips, vacations, places visited, conferences attended\n- Other: any other personal details worth remembering (favorite food, sports teams, etc.)\n\nOnly include contacts where you found personal information. Only include fields where you have concrete information — do not guess or infer. For each field, provide the value AND the date of the call where it was most recently mentioned.\n\nReturn a JSON array of objects with this structure:\n[\n  {\n    "contactName": "Full Name",\n    "personalInfo": {\n      "location": { "value": "Based in Austin, TX", "date": "2025-03-15" },\n      "interests": { "value": "Kubernetes and cloud-native technologies", "date": "2025-04-01" },\n      "family": { "value": "Has two kids", "date": "2025-02-20" }\n    },\n    "sourceCallTitles": ["Call Title 1", "Call Title 2"]\n  }\n]\n\nEach field in personalInfo should be an object with "value" (concise sentence or phrase) and "date" (ISO date from the call header where this was mentioned, e.g. "2025-03-15"). Use the most recent mention date if mentioned in multiple calls. Only include fields in personalInfo that have actual data. sourceCallTitles should list which calls the information came from. If no personal information is found for any contact, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
+              'You are a sales engineering assistant. Given Gong call transcripts and a list of contact names, extract personal details and communication patterns mentioned in conversations. Look carefully through ALL transcripts for ANY personal information or behavioral patterns. Be thorough — even brief mentions are valuable for rapport building. Look for mentions of:\n\n- Location: where they live, are based, or mentioned being from\n- Interests: things they mentioned being interested in or enthusiastic about, topics they care deeply about\n- Family: mentions of spouse, partner, children, pets, family events\n- Hobbies: activities they do outside work, sports, games, etc.\n- Background: career history, education, previous companies, certifications\n- Travel: upcoming trips, vacations, places visited, conferences attended\n- Engagement Style: their communication style observed across calls — e.g. direct and to-the-point, asks lots of questions, humorous/lighthearted, quiet/reserved, detail-oriented, big-picture thinker, collaborative, skeptical, etc. Describe how they typically engage in conversations.\n- Concerns: recurring themes they push on, things they worry about, priorities they consistently raise (e.g. security, cost, performance, timeline, team adoption)\n- Other: any other personal details worth remembering (favorite food, sports teams, etc.)\n\nOnly include contacts where you found personal information. Only include fields where you have concrete information — do not guess or infer. For each field, provide the value AND the date of the call where it was most recently mentioned.\n\nReturn a JSON array of objects with this structure:\n[\n  {\n    "contactName": "Full Name",\n    "personalInfo": {\n      "location": { "value": "Based in Austin, TX", "date": "2025-03-15" },\n      "interests": { "value": "Kubernetes and cloud-native technologies", "date": "2025-04-01" },\n      "family": { "value": "Has two kids", "date": "2025-02-20" },\n      "engagement_style": { "value": "Direct and detail-oriented, asks probing technical questions", "date": "2025-04-01" },\n      "concerns": { "value": "Focused on security compliance and migration timeline", "date": "2025-03-20" }\n    },\n    "sourceCallTitles": ["Call Title 1", "Call Title 2"]\n  }\n]\n\nEach field in personalInfo should be an object with "value" (concise sentence or phrase) and "date" (ISO date from the call header where this was mentioned, e.g. "2025-03-15"). Use the most recent mention date if mentioned in multiple calls. Only include fields in personalInfo that have actual data. sourceCallTitles should list which calls the information came from. If no personal information is found for any contact, return an empty array [].\n\nReturn ONLY valid JSON, no markdown fences or other text.',
           },
           {
             role: 'user',
@@ -1086,6 +1145,35 @@ export interface InsightsResult {
   crossTeamInsights: CrossTeamInsight[];
 }
 
+export interface CompetitorMention {
+  competitor: string;
+  accounts: string[];
+  mentionCount: number;
+  context: string;
+  soloProduct: string;
+  positioning: string;
+}
+
+export interface ProductAlignment {
+  product: string;
+  accounts: string[];
+  useCases: string[];
+  adoptionStage: 'evaluating' | 'testing' | 'deploying' | 'expanding';
+}
+
+export interface CompetitiveThreat {
+  threat: string;
+  accounts: string[];
+  severity: 'high' | 'medium' | 'low';
+  recommendation: string;
+}
+
+export interface CompetitiveAnalysisResult {
+  competitorMentions: CompetitorMention[];
+  productAlignment: ProductAlignment[];
+  competitiveThreats: CompetitiveThreat[];
+}
+
 /**
  * Generate cross-account insights by analyzing cached Gong briefs and POC
  * summaries across the user's accounts. For cross-team insights, also
@@ -1229,11 +1317,132 @@ export async function generateInsights(
   });
 }
 
+/**
+ * Generate competitive analysis by analyzing cached Gong briefs across the
+ * user's accounts. Identifies competitor mentions, Solo.io product alignment,
+ * and competitive threats. Cached 4 hours per user.
+ */
+export async function generateCompetitiveAnalysis(
+  userId: string,
+  userAccounts: Array<{ id: string; name: string }>,
+): Promise<CompetitiveAnalysisResult | null> {
+  const client = getClient();
+  if (!client) {
+    logger.warn('OpenAI API key not configured, skipping competitive analysis');
+    return null;
+  }
+
+  if (userAccounts.length === 0) return null;
+
+  const cacheKey = `openai:competitive:${userId}`;
+
+  return cachedCall<CompetitiveAnalysisResult | null>(cacheKey, 14400, async () => {
+    try {
+      // Collect cached Gong briefs for user's accounts — in parallel
+      const sectionResults = await Promise.all(
+        userAccounts.map(async (account) => {
+          const parts: string[] = [`=== ${account.name} (${account.id}) ===`];
+
+          const [pocSummary, calls] = await Promise.all([
+            summarizePOCs(account.id).catch(() => null),
+            getAccountInteractions(account.id, { sourceTypes: ['gong_call'] }).catch(() => []),
+          ]);
+
+          if (pocSummary) {
+            parts.push(`POC Health: ${pocSummary.health.rating} — ${pocSummary.health.reason}`);
+            parts.push(`POC Summary: ${pocSummary.summary}`);
+          }
+
+          const callsArr = calls as Array<Record<string, unknown>>;
+          const callTitles = [...new Set(
+            callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
+          )].slice(0, 8);
+
+          if (callTitles.length > 0) {
+            const briefs = await Promise.all(
+              callTitles.map(async (title) => {
+                const brief = await generateGongCallBrief(account.id, title).catch(() => null);
+                return brief ? `[Call] ${title}:\n${brief}` : null;
+              }),
+            );
+            const validBriefs = briefs.filter(Boolean);
+            if (validBriefs.length > 0) {
+              parts.push(validBriefs.join('\n'));
+            }
+          }
+
+          return parts.length > 1 ? parts.join('\n') : null;
+        }),
+      );
+      const sections = sectionResults.filter(Boolean) as string[];
+
+      if (sections.length === 0) return null;
+
+      logger.info(
+        { userId, accounts: userAccounts.length },
+        '[competitive-analysis] Sending to OpenAI',
+      );
+
+      const response = await client.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content:
+              `You are a competitive intelligence analyst for Solo.io, a company that sells: Gloo Gateway (API gateway), Gloo Mesh / Istio (service mesh, ambient mesh), Gloo Network (CNI/networking), and Gloo Portal (developer portal).
+
+Given Gong call briefs and POC summaries across multiple customer accounts, analyze the data for competitive intelligence.
+
+IMPORTANT: Solo.io's own products are NOT competitors. This includes: Gloo Gateway, Gloo Mesh, Gloo Network, Gloo Portal, Gloo Platform, Gloo AI Gateway, kgateway, kagent, Agent Gateway (agentgateway), and any product with "Gloo" in the name. Solo.io is also a primary contributor to Istio and Envoy — when these are discussed in the context of Solo.io's offerings (e.g. "Istio with Gloo Mesh", ambient mesh), they are NOT competitors. Never list any Solo.io or Gloo product as a competitor or threat.
+
+Common competitors include (but are not limited to): Kong, NGINX, Apigee, AWS API Gateway, Azure API Management, Linkerd, Consul Connect, Envoy (standalone), F5, Traefik, HashiCorp, Mulesoft, Akamai, Cloudflare, LiteLLM, Portkey, Cilium, Calico, Tetrate, Aspen Mesh, Istio (when discussed as an alternative rather than with Solo.io). Also identify ANY other vendor, product, or open-source project mentioned as a competitor or alternative to Solo.io products, even if not listed here.
+
+Return a JSON object with three arrays:
+
+1. "competitorMentions": Competitors discussed across accounts.
+   Each item: { "competitor": "name", "accounts": ["account names"], "mentionCount": number, "context": "brief summary of how/why the competitor was discussed", "soloProduct": "which Solo.io product competes (e.g. Gloo Gateway)", "positioning": "how to position Solo.io against this competitor — specific, actionable guidance" }
+   Sort by mentionCount descending. Only include competitors actually mentioned in the data.
+
+2. "productAlignment": For each Solo.io product being discussed, which accounts are evaluating or using it.
+   Each item: { "product": "Solo.io product name", "accounts": ["account names"], "useCases": ["specific use cases mentioned"], "adoptionStage": "evaluating"|"testing"|"deploying"|"expanding" }
+   Only include products with actual evidence in the call data.
+
+3. "competitiveThreats": Situations where Solo.io faces competition from other vendors, open-source projects, or customer DIY/build-it-themselves approaches. Do NOT include general POC issues, migration concerns, or internal technical challenges — only include threats where a competing product, project, or DIY approach is being considered as an alternative to Solo.io.
+   Each item: { "threat": "description of the competitive threat", "accounts": ["affected account names"], "severity": "high"|"medium"|"low", "recommendation": "specific action to take" }
+   "high" = customer actively evaluating a competitor or building DIY alternative, "medium" = competitor or OSS alternative mentioned favorably or being compared, "low" = competitor or alternative mentioned in passing.
+
+Return 0-10 items per array based on what the data supports. Be specific and actionable. Do not fabricate competitor mentions — only report what is present in the call data. Return ONLY valid JSON, no markdown fences or other text.`,
+          },
+          {
+            role: 'user',
+            content: `Analyze these accounts for competitive intelligence:\n\n${sections.join('\n\n')}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 3000,
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+      const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(jsonStr);
+
+      return {
+        competitorMentions: Array.isArray(parsed.competitorMentions) ? parsed.competitorMentions : [],
+        productAlignment: Array.isArray(parsed.productAlignment) ? parsed.productAlignment : [],
+        competitiveThreats: Array.isArray(parsed.competitiveThreats) ? parsed.competitiveThreats : [],
+      };
+    } catch (err) {
+      logger.error({ err }, 'Failed to generate competitive analysis with OpenAI');
+      return null;
+    }
+  });
+}
+
 // ── Warmup status tracking ──
 
 export interface WarmupStatus {
   status: 'idle' | 'warming' | 'complete' | 'error';
-  phase: 'gong-briefs' | 'contact-insights' | 'poc-summaries' | 'done';
+  phase: 'gong-briefs' | 'contact-insights' | 'poc-summaries' | 'action-items' | 'done';
   totalAccounts: number;
   processedAccounts: number;
   totalCalls: number;
@@ -1241,6 +1450,7 @@ export interface WarmupStatus {
   skipped: number;
   contactInsightsWarmed: number;
   pocSummariesWarmed: number;
+  actionItemsWarmed: number;
   startedAt: string | null;
   completedAt: string | null;
   error: string | null;
@@ -1261,6 +1471,7 @@ const warmupState: WarmupStatus = {
   skipped: 0,
   contactInsightsWarmed: 0,
   pocSummariesWarmed: 0,
+  actionItemsWarmed: 0,
   startedAt: null,
   completedAt: null,
   error: null,
@@ -1404,6 +1615,7 @@ export async function warmAllGongBriefs(): Promise<void> {
   warmupState.skipped = 0;
   warmupState.contactInsightsWarmed = 0;
   warmupState.pocSummariesWarmed = 0;
+  warmupState.actionItemsWarmed = 0;
 
   try {
     const accounts = await listAccounts();
@@ -1544,6 +1756,42 @@ export async function warmAllGongBriefs(): Promise<void> {
       '[warmup] POC summaries phase complete',
     );
 
+    // Phase 4: Warm action items (skip accounts already cached)
+    warmupState.phase = 'action-items';
+    let actionItemsSkipped = 0;
+    logger.info({ accountCount: accounts.length }, '[warmup] Starting action items warming');
+
+    for (const account of accounts) {
+      const accountId = account.id as string;
+      const accountName = account.name as string;
+      try {
+        const cached = await getCache<ActionItemsCacheEntry>(`openai:action-items:${accountId}`);
+        if (cached && cached.items && cached.items.length > 0) {
+          warmupState.actionItemsWarmed++;
+          actionItemsSkipped++;
+          continue;
+        }
+        const items = await extractActionItems(accountId);
+        if (items.length > 0) {
+          warmupState.actionItemsWarmed++;
+          logger.info(
+            { accountId, accountName, itemCount: items.length },
+            '[warmup] Warmed action items',
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { accountId, accountName, err: (err as Error).message },
+          '[warmup] Failed to warm action items',
+        );
+      }
+    }
+
+    logger.info(
+      { warmed: warmupState.actionItemsWarmed, skipped: actionItemsSkipped, accountCount: accounts.length },
+      '[warmup] Action items phase complete',
+    );
+
     warmupState.phase = 'done';
     warmupState.status = 'complete';
     warmupState.completedAt = new Date().toISOString();
@@ -1554,6 +1802,7 @@ export async function warmAllGongBriefs(): Promise<void> {
         skipped: warmupState.skipped,
         contactInsightsWarmed: warmupState.contactInsightsWarmed,
         pocSummariesWarmed: warmupState.pocSummariesWarmed,
+        actionItemsWarmed: warmupState.actionItemsWarmed,
         accountCount: accounts.length,
       },
       '[warmup] All phases complete',
@@ -1603,15 +1852,13 @@ export async function warmAllGongBriefs(): Promise<void> {
 }
 
 /**
- * Generate insights for a single user. Skips if already cached.
+ * Pre-warm all Insights page data for a single user. Skips sections already cached.
+ * Warms: insights, competitive analysis, POC summaries, and action items.
  * Called on first login and during daily batch warmup.
  */
 export async function warmInsightsForUser(userId: string, userName: string, userEmail: string): Promise<boolean> {
   const client = getClient();
   if (!client) return false;
-
-  const cached = await getCache(`openai:insights:${userId}`);
-  if (cached) return true;
 
   const [data, allAccountsRaw] = await Promise.all([
     getHomepageData(userName, userEmail),
@@ -1626,7 +1873,42 @@ export async function warmInsightsForUser(userId: string, userName: string, user
     name: a.name as string,
   }));
 
-  await generateInsights(userId, userAccounts, allAccounts);
+  if (userAccounts.length === 0) return true;
+
+  // Check which caches need warming
+  const [cachedInsights, cachedCompetitive] = await Promise.all([
+    getCache(`openai:insights:${userId}`),
+    getCache(`openai:competitive:${userId}`),
+  ]);
+
+  // Phase 1: Warm cross-account AI analysis (insights + competitive) in parallel
+  const aiTasks: Promise<unknown>[] = [];
+  if (!cachedInsights) aiTasks.push(generateInsights(userId, userAccounts, allAccounts));
+  if (!cachedCompetitive) aiTasks.push(generateCompetitiveAnalysis(userId, userAccounts));
+  if (aiTasks.length > 0) await Promise.all(aiTasks);
+
+  // Phase 2: Warm per-account data (POC summaries + action items) sequentially per account
+  for (const account of userAccounts) {
+    try {
+      const [cachedPoc, cachedActions] = await Promise.all([
+        getCache(`openai:poc-summary:${account.id}`),
+        getCache<ActionItemsCacheEntry>(`openai:action-items:${account.id}`),
+      ]);
+
+      const perAccountTasks: Promise<unknown>[] = [];
+      if (!cachedPoc) perAccountTasks.push(summarizePOCs(account.id));
+      if (!cachedActions || !cachedActions.items || cachedActions.items.length === 0) {
+        perAccountTasks.push(extractActionItems(account.id));
+      }
+      if (perAccountTasks.length > 0) await Promise.all(perAccountTasks);
+    } catch (err) {
+      logger.warn(
+        { accountId: account.id, accountName: account.name, err: (err as Error).message },
+        '[insights-warmup] Failed to warm per-account data',
+      );
+    }
+  }
+
   return true;
 }
 

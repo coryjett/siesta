@@ -40,24 +40,6 @@ spec:
     allowedRoutes:
       namespaces:
         from: Same
-  - name: postgres
-    port: 5432
-    protocol: TCP
-    allowedRoutes:
-      namespaces:
-        from: Same
-      kinds:
-      - kind: TCPRoute
-        group: gateway.networking.k8s.io
-  - name: redis
-    port: 6379
-    protocol: TCP
-    allowedRoutes:
-      namespaces:
-        from: Same
-      kinds:
-      - kind: TCPRoute
-        group: gateway.networking.k8s.io
   - name: otel-traces
     port: 4317
     protocol: TCP
@@ -195,34 +177,6 @@ spec:
     - group: agentgateway.dev
       kind: AgentgatewayBackend
       name: support-agent-tools
----
-apiVersion: gateway.networking.k8s.io/v1alpha2
-kind: TCPRoute
-metadata:
-  name: postgres
-  namespace: siesta
-spec:
-  parentRefs:
-  - name: agentgateway
-    sectionName: postgres
-  rules:
-  - backendRefs:
-    - name: postgres-cnpg-rw
-      port: 5432
----
-apiVersion: gateway.networking.k8s.io/v1alpha2
-kind: TCPRoute
-metadata:
-  name: redis
-  namespace: siesta
-spec:
-  parentRefs:
-  - name: agentgateway
-    sectionName: redis
-  rules:
-  - backendRefs:
-    - name: redis
-      port: 6379
 ---
 apiVersion: v1
 kind: Service

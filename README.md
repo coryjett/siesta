@@ -76,13 +76,12 @@ Sales Engineering portfolio management platform powered by MCP (Model Context Pr
  └──────────┘  │  │  :3001 HTTP ─── MCP + OpenAI routing                         │   │           │        │
                │  │  :3002 HTTP ─── Support MCP routing                          ├───┼───────────┘        │
                │  │  :4317 TCP ──── OTEL traces passthrough                      │   │                    │
-               │  │  :5432 TCP ──── PostgreSQL passthrough                       │   │                    │
-               │  │  :6379 TCP ──── Redis passthrough                            ├───┼────────────────────┘
+               │  │                                                              ├───┼────────────────────┘
                │  └──┬───────────────────────────────────────────────────────────┘   │
                │     │ :443                                                          │
                │     ▼                                                               │
                │  ┌────────────────────┐                                             │
-               │  │                    │  all traffic via AGW                        │
+               │  │                    │                                             │
                │  │  Siesta Server     ├──────────────┐                              │
                │  │  (Fastify + React) │              │                              │
                │  │                    │              │                              │
@@ -90,12 +89,13 @@ Sales Engineering portfolio management platform powered by MCP (Model Context Pr
                │  │  │ OTEL SDK     │  │              │                              │
                │  │  │ (auto-instr.)│  │              │                              │
                │  │  └──────────────┘  │              │                              │
-               │  └────────────────────┘              │                              │
-               │                                      │                              │
-               │     ┌────────────────┐  ┌────────┐   │                              │
-               │     │  PostgreSQL    │  │ Redis  │◄──┘                              │
-               │     │ (CloudNativePG)│  │ Cache  │                                  │
-               │     └────────────────┘  └────────┘                                  │
+               │  └───┬────────────┬───┘              │                              │
+               │      │            │                  │                              │
+               │      ▼            ▼                  │                              │
+               │  ┌────────────────┐  ┌────────┐      │                              │
+               │  │  PostgreSQL    │  │ Redis  │      │                              │
+               │  │ (CloudNativePG)│  │ Cache  │      │  (direct, not via AGW)       │
+               │  └────────────────┘  └────────┘      │                              │
                │                                                                     │
                └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -160,7 +160,7 @@ kubectl apply -f k8s/configmap.yaml
 ```
 
 The `siesta-secret` must contain (see `k8s/secret.yaml.tpl` for the template):
-- `DATABASE_URL` -- PostgreSQL connection string (use `agentgateway.siesta.svc.cluster.local:5432` as host to route through AGW)
+- `DATABASE_URL` -- PostgreSQL connection string (use `postgres-cnpg-rw.siesta.svc.cluster.local:5432` as host in production)
 - `SESSION_SECRET` -- Random 64-char hex string
 - `ENCRYPTION_KEY` -- Random 64-char hex string (32 bytes)
 - `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET`, `MCP_TOKEN_URL`, `MCP_AUTH_URL` -- Keycloak OIDC credentials
@@ -292,7 +292,7 @@ kubectl apply -f k8s/agentgateway.yaml
 ```
 
 This creates:
-- **Gateway** with listeners: HTTPS/443 (web), HTTPS/3000 (MCP external), HTTP/3001 (MCP internal), HTTP/3002 (Support MCP), TCP/4317 (OTEL traces), TCP/5432 (PostgreSQL), TCP/6379 (Redis)
+- **Gateway** with listeners: HTTPS/443 (web), HTTPS/3000 (MCP external), HTTP/3001 (MCP internal), HTTP/3002 (Support MCP), TCP/4317 (OTEL traces)
 - **AgentgatewayBackend** for portfolio-analyzer MCP server
 - **AgentgatewayBackend** for support-agent-tools MCP server
 - **AgentgatewayBackend** for OpenAI API proxying

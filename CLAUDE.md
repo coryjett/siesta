@@ -116,6 +116,7 @@ scripts/             # Database initialization scripts
 - **Backend pattern:** Routes -> MCP Services (with caching) -> MCP Client -> Agent Gateway -> MCP Server. Fastify plugin architecture for modularity. PostgreSQL connection routes through Agent Gateway's TCP :5432 listener (`DATABASE_URL` host must be set to `agentgateway.siesta.svc.cluster.local` in the Kubernetes secret).
 - **Frontend pattern:** File-based routing with lazy loading. TanStack Query for server state. Vite dev proxy forwards `/api` and `/auth` to backend.
 - **User roles:** `se`, `se_manager`, `admin`. Level-based hierarchy in `packages/shared/src/constants/roles.ts`. Homepage filters accounts by CSE owner or interaction participation.
+- **"My Accounts" identification:** The server-side `getHomepageData()` identifies user accounts via TWO methods: (1) `cseOwner` field matching `user.name` (case-insensitive `.includes()`), and (2) interaction participation search (searching Gong calls, emails, meetings for the user's name/email). **IMPORTANT:** The `cseOwner` field from MCP data often does NOT match `user.name` from Keycloak — they use different name formats. Most accounts are identified via interaction participation, not `cseOwner`. Never rely solely on `cseOwner` matching `user.name` for frontend "My Accounts" filtering. Always use `homeData.allUserAccountIds` (which includes both cseOwner matches AND interaction participants, before the opportunity filter) for any "My Accounts" filter outside the homepage.
 - **Homepage:** Shows accounts where the logged-in user is CSE owner or has participated in calls/emails/meetings. Only accounts with open non-renewal opportunities are shown. Account cards show company logos (Google Favicons with letter-avatar fallback) and POC health dots (bottom-right, green/yellow/red with hover tooltip). POC summaries are prefetched via `useQueries()` for all user accounts. Stats include account count, total open pipeline, and open action items. Action items include issues and verbal commitments from Gong calls (no tasks, no Zendesk items). "Show all" link on action items navigates to the dedicated `/action-items` page.
 - **Action Items Page:** Dedicated `/action-items` page accessible from sidebar and homepage "Show all" link. Shows all action items across accounts with a real-time filter input. Open items listed at top with checkboxes, collapsible "Completed (N)" section at bottom (collapsed by default). Each item shows action text, account name (clickable link), source, date, and completed timestamp for done items. Uses same `useMyActionItems()` query as homepage.
 - **Account Detail:** AI-generated account summary (structured sections with bullet points), action items extracted from interactions (with "View all" link to `/action-items`), opportunities list (open opps with stage/amount/close date and POC health dots), POC status card with health badge (green/yellow/red with hover tooltip), contacts with personal notes (extracted from Gong transcripts, with timestamps showing when each detail was mentioned), grouped email threads with inline AI summaries, expandable call items with Gong summaries, meetings timeline, and notes.
@@ -137,6 +138,7 @@ scripts/             # Database initialization scripts
 - **Telemetry Stack:** Deployed via `./k8s/deploy-telemetry.sh` into the `telemetry` namespace. Includes: Loki (logs), Tempo (traces), OTEL Collectors (traces on gRPC 4317, metrics, logs DaemonSet), kube-prometheus-stack (Prometheus + Grafana). Agent Gateway exports traces via `k8s/agentgateway-telemetry.yaml` (AgentgatewayParameters + PodMonitor). Grafana dashboards: custom Logs & Traces dashboard via `k8s/grafana-dashboards.yaml`, plus 4 Agent Gateway dashboards (CP, Dataplane, LLM, MCP) in `k8s/grafana-dashboard-agentgateway-*.yaml` — these use `$__rate_interval` instead of hardcoded `[5m]` to handle sparse traffic correctly. Reapply after Helm upgrades: `kubectl apply -f k8s/grafana-dashboard-agentgateway-*.yaml`. Access Grafana: `kubectl port-forward -n telemetry svc/kube-prometheus-stack-grafana 3001:80`. Cleanup: `./k8s/deploy-telemetry.sh --cleanup`.
 - **OpenTelemetry:** `instrumentation.ts` initializes `@opentelemetry/sdk-node` with auto-instrumentations, loaded via Node.js `--import` flag before the app starts. Traces HTTP incoming (Fastify), HTTP outgoing (MCP fetch, OpenAI via undici), and Redis (ioredis). fs/dns/net instrumentations disabled (noisy, low value). Uses gRPC exporter (`@opentelemetry/exporter-trace-otlp-grpc`) to send traces through the Agent Gateway's TCP :4317 listener, which forwards to the OTEL Collector in the `telemetry` namespace via an ExternalName Service, then on to Tempo. Conditional -- no-op when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset, so local dev without a collector works unchanged. Siesta traces join Agent Gateway traces in Grafana via distributed trace context propagation.
 - **Sensitive config:** MCP credentials (client ID, secret, server URL, auth URLs) have no hardcoded defaults -- they must be provided via environment variables or `.env` file. The `.env` file is in `.gitignore`. `SESSION_SECRET` and `ENCRYPTION_KEY` have development-only defaults that the server explicitly rejects in production (`NODE_ENV=production`) with a fatal error.
+- **Database Backups:** CloudNativePG automated backups to GCS bucket `gs://siesta-db-backups/cnpg`. Uses Workload Identity (`siesta-cnpg-backup@field-engineering-us.iam.gserviceaccount.com`) — no key files. Continuous WAL archiving for point-in-time recovery. `ScheduledBackup/siesta-daily-backup` runs daily at 3:00 AM UTC. 30-day retention policy. Configured in `k8s/postgres-cnpg.yaml`. To restore from backup, change the CNPG Cluster `bootstrap` from `initdb` to `recovery` pointing at the barman object store. To trigger a manual backup: `kubectl create -f -<<<'{"apiVersion":"postgresql.cnpg.io/v1","kind":"Backup","metadata":{"name":"manual-backup","namespace":"siesta"},"spec":{"method":"barmanObjectStore","cluster":{"name":"postgres-cnpg"}}}'`. Check backup status: `kubectl get backups -n siesta`.
 - **Production:** Single Docker container serves static frontend + API on port 3000. Kubernetes manifests in `k8s/`.
 
 ## API Endpoints
@@ -215,7 +217,7 @@ APP_URL=https://siesta.cjett.net
 API_URL=https://siesta.cjett.net
 SESSION_SECRET=<32-byte-secret>
 ENCRYPTION_KEY=<32-byte-hex-key>
-DATABASE_URL=postgresql://...  # use agentgateway.siesta.svc.cluster.local:5432 as host in production
+DATABASE_URL=postgresql://...  # use postgres-cnpg-rw.siesta.svc.cluster.local:5432 as host in production
 ```
 
 ## Deployment
@@ -239,8 +241,8 @@ Siesta pod -> agentgateway.siesta.svc:3001  -> mcp.cs.solo.io:443           (MCP
 Siesta pod -> agentgateway.siesta.svc:3001  -> api.openai.com:443           (OpenAI)
 Siesta pod -> agentgateway.siesta.svc:3002  -> support-agent-tools.is.solo.io:443 (Support MCP)
 Siesta pod -> agentgateway.siesta.svc:4317  -> OTEL Collector (telemetry ns) (traces)
-Siesta pod -> agentgateway.siesta.svc:5432  -> postgres-cnpg-rw:5432        (PostgreSQL)
-Siesta pod -> agentgateway.siesta.svc:6379  -> redis:6379                   (Redis)
+Siesta pod -> postgres-cnpg-rw.siesta.svc:5432                              (PostgreSQL, direct)
+Siesta pod -> redis.siesta.svc:6379                                         (Redis, direct)
 ```
 
 Traffic not routed through AGW:
@@ -248,7 +250,7 @@ Traffic not routed through AGW:
 - Support MCP OAuth (`auth-mcp.is.solo.io`) -- external OAuth server
 
 Resources in `siesta` namespace:
-- `Gateway/agentgateway` -- listeners on :443 (web), :3000 (MCP external HTTPS), :3001 (MCP + OpenAI internal HTTP), :3002 (Support MCP), :4317 (OTEL), :5432 (PostgreSQL), :6379 (Redis)
+- `Gateway/agentgateway` -- listeners on :443 (web), :3000 (MCP external HTTPS), :3001 (MCP + OpenAI internal HTTP), :3002 (Support MCP), :4317 (OTEL)
 - `AgentgatewayBackend/portfolio-analyzer` -- static target to `mcp.cs.solo.io:443` with TLS + passthrough auth
 - `AgentgatewayBackend/support-agent-tools` -- static target to `support-agent-tools.is.solo.io:443` with TLS + passthrough auth
 - `AgentgatewayBackend/openai` -- static target to `api.openai.com:443` for OpenAI API proxying
@@ -260,3 +262,137 @@ Resources in `siesta` namespace:
 - `TCPRoute/postgres` -- routes :5432 to postgres-cnpg-rw
 - `TCPRoute/redis` -- routes :6379 to redis
 - `AgentgatewayPolicy/siesta-auth` -- API key authentication on :3000 (external MCP) via `Secret/siesta-agw-apikey`
+
+## Customer360 REST API Reference
+
+The upstream data source (customer360 at `customer360.cs.solo.io`) exposes a comprehensive REST API on port 8080 in addition to the MCP server on port 8090. The REST API provides direct access to the same data Siesta currently fetches via MCP tool calls, with lower latency (no MCP serialization overhead). Codebase at `/Users/coryjett/Documents/Workspace/Other/customer360`. Swagger docs at `/swagger/`.
+
+**Tech stack:** Go 1.25+, PostgreSQL 17 with pgvector, sqlc, golang-migrate, Google Vertex AI (Gemini) for embeddings/sentiment.
+
+**Auth:** JWT cookie-based with Google OAuth. Domain-restricted to `@solo.io`. API keys available via `POST /api/admin/api-keys`. Public routes (no auth): `/api/health`, `/api/auth/login`, `POST /api/auth/callback`.
+
+### Accounts/Companies
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/companies` | List companies (`{ companies: [], total: int }`) |
+| GET | `/api/companies/{id}` | Full company object (70+ fields: name, csmOwner, csmHealthScore, website, closedWonArr, lifecyclePhase, productionStatus, customFields) |
+| PATCH | `/api/companies/{id}` | Update company (partial) |
+| GET | `/api/companies/{id}/activities` | Unified interaction timeline (Gong calls, emails, meetings, tickets) |
+| GET | `/api/companies/{id}/tickets` | Zendesk tickets |
+| GET | `/api/companies/{id}/tasks` | Company tasks |
+| GET | `/api/companies/{id}/contacts` | Contact list |
+| GET | `/api/companies/{id}/renewals` | Renewal opportunities |
+| GET | `/api/companies/{id}/sentiment-trends` | Sentiment analytics |
+| GET | `/api/companies/{id}/architecture-doc` | Architecture documentation |
+| PUT | `/api/companies/{id}/architecture-doc` | Update architecture doc |
+
+### Contacts, Opportunities, Tasks
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/contacts/{id}` | Full contact with company reference |
+| PATCH | `/api/contacts/{id}` | Update contact |
+| GET | `/api/contacts/{id}/activities` | Contact activity feed |
+| GET | `/api/opportunities/{id}` | Opportunity details (stage, amount, close date, ARR, line items) |
+| PATCH | `/api/opportunities/{id}` | Update opportunity |
+| GET | `/api/opportunities/{id}/line-items` | Product line items |
+| PATCH | `/api/opportunities/line-items/{id}` | Update line item |
+| GET | `/api/tasks` | List tasks with filters |
+| GET | `/api/tasks/{id}` | Single task |
+| POST | `/api/tasks` | Create task |
+| PATCH | `/api/tasks/{id}` | Update task |
+| DELETE | `/api/tasks/{id}` | Delete task |
+| POST | `/api/tasks/{id}/comments` | Add comment |
+
+### Search & AI
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/search?q=query` | Global search (companies, contacts, interactions) |
+| POST | `/api/ai/search` | Vector similarity search (`{ companyId, message, conversationHistory }`) |
+| POST | `/api/ai/chat` | AI chat for account insights |
+| POST | `/api/ai/chat/stream` | Streaming AI chat |
+| GET | `/api/ai/source/{type}/{id}` | Get source for AI citation |
+| POST | `/api/ai/insights/stream` | Streaming portfolio insights |
+
+### Sentiment & Analytics
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/sentiment/portfolio` | Portfolio-wide sentiment |
+| GET | `/api/sentiment/accounts` | Account sentiment list |
+| GET | `/api/sentiment/accounts/{id}/negative-interactions` | Negative interactions |
+| PATCH | `/api/interactions/{id}/sentiment-false-positive` | Mark sentiment false positive |
+
+### Generic Entity Query API
+
+Supports advanced filtering, sorting, column selection, and pagination for any entity type (`companies`, `contacts`, `opportunities`, `assets`, `tasks`).
+
+```
+GET  /api/entities/{type}              → Simple list
+GET  /api/entities/{type}/{id}         → Get by ID
+POST /api/entities/{type}/query        → Advanced query
+GET  /api/entities/{type}/metadata     → Field metadata
+```
+
+Advanced query example:
+```json
+POST /api/entities/companies/query
+{
+  "columns": ["id", "name", "csmOwner", "csmHealthScore"],
+  "filters": [{ "field": "csmHealthScore", "operator": "gte", "value": 3 }],
+  "sort": { "field": "name", "direction": "asc" },
+  "limit": 50
+}
+```
+
+### Google Integrations
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/integrations/google/auth-url` | OAuth URL |
+| POST | `/api/integrations/google/connect` | Connect account |
+| GET | `/api/integrations/google` | List integrations |
+| DELETE | `/api/integrations/google/{id}` | Disconnect |
+| GET | `/api/integrations/google/threads/{id}` | Email thread |
+
+### Admin
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/admin/users` | List all users |
+| PATCH | `/api/admin/users/{id}/role` | Update role |
+| DELETE | `/api/admin/users/{id}` | Delete user |
+| POST | `/api/admin/users/{id}/force-logout` | Force logout |
+| GET | `/api/admin/api-keys` | List API keys |
+| POST | `/api/admin/api-keys` | Create API key |
+| DELETE | `/api/admin/api-keys/{id}` | Revoke key |
+| GET | `/api/admin/field-mappings` | Salesforce field sync config |
+| GET | `/api/admin/sf-available-fields?object=Account` | Discover Salesforce fields |
+
+### MCP-to-REST Mapping
+
+Siesta currently uses MCP tool calls. These map to direct REST endpoints:
+
+| MCP Tool / Sub-tool | REST Equivalent | Notes |
+|---|---|---|
+| `get_account_details` | `GET /api/companies/{id}` | REST returns 70+ fields directly |
+| `get_account_details` (contacts) | `GET /api/companies/{id}/contacts` | Direct endpoint |
+| `get_account_details` (interactions) | `GET /api/companies/{id}/activities` | Unified timeline |
+| `get_account_details` (opportunities) | `GET /api/opportunities/{id}` | Per-opportunity |
+| `get_account_details` (tickets) | `GET /api/companies/{id}/tickets` | Direct endpoint |
+| `get_account_details` (architecture) | `GET /api/companies/{id}/architecture-doc` | Direct endpoint |
+| `get_account_details` (sentiment) | `GET /api/sentiment/accounts/{id}/negative-interactions` | Direct endpoint |
+| `filter_accounts` | `POST /api/entities/companies/query` | Advanced filtering with operators |
+| `search_portfolio_interactions` | `POST /api/ai/search` | Vector similarity search |
+| `get_portfolio_stats` | `GET /api/sentiment/portfolio` + `GET /api/companies` | Combine endpoints |
+| `get_negative_interactions` | `GET /api/sentiment/accounts/{id}/negative-interactions` | Direct endpoint |
+
+### Sync Status
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/sync/status` | Sync status across sources (Salesforce, Gong, Zendesk, Gmail) |
+| GET | `/api/sync/cursors` | Incremental sync cursors |
+| POST | `/api/sync/cursors/{object}/reset` | Reset sync cursor |
