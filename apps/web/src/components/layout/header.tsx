@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuth } from '../../contexts/auth-context';
 import { useTheme } from '../../contexts/theme-context';
+import { useAlerts } from '../../hooks/use-alerts';
 import GlobalSearch from './global-search';
 
 interface HeaderProps {
@@ -13,12 +14,19 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
   const { user, logout } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const alertsRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const { alerts } = useAlerts();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+      }
+      if (alertsRef.current && !alertsRef.current.contains(e.target as Node)) {
+        setAlertsOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -29,6 +37,8 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
     setMenuOpen(false);
     await logout();
   };
+
+  const hasCritical = alerts.some((a) => a.severity === 'critical');
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] px-4 md:px-6">
@@ -50,7 +60,78 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
         <h1 className="font-display text-lg font-semibold text-[#191726] dark:text-[#f2f2f2] hidden sm:block">{title}</h1>
       </div>
 
-      <div className="mx-4 flex-1 flex justify-center">
+      <div className="mx-4 flex-1 flex items-center justify-center gap-3">
+        {/* Needs Attention */}
+        {alerts.length > 0 && (
+          <div className="relative" ref={alertsRef}>
+            <button
+              type="button"
+              onClick={() => setAlertsOpen((prev) => !prev)}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+                hasCritical
+                  ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 animate-pulse-subtle'
+                  : 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span className="hidden sm:inline">Needs Attention</span>
+              <span className={`flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums ${
+                hasCritical
+                  ? 'bg-red-600 text-white'
+                  : 'bg-yellow-600 text-white'
+              }`}>
+                {alerts.length}
+              </span>
+            </button>
+
+            {alertsOpen && (
+              <div className="absolute left-0 top-full mt-1.5 w-80 sm:w-96 rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] shadow-lg z-50 overflow-hidden">
+                <div className="border-b border-[#dedde4] dark:border-[#2a2734] px-4 py-2.5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+                    Needs Attention ({alerts.length})
+                  </p>
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
+                  {alerts.map((alert) => (
+                    <button
+                      key={alert.id}
+                      type="button"
+                      onClick={() => {
+                        setAlertsOpen(false);
+                        navigate({ to: '/accounts/$accountId', params: { accountId: alert.accountId } });
+                      }}
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-[#f6f5f9] dark:hover:bg-[#1a1825] transition-colors cursor-pointer"
+                    >
+                      <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                        alert.severity === 'critical' ? 'bg-red-500' : 'bg-yellow-500'
+                      }`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2] truncate">
+                            {alert.accountName}
+                          </span>
+                          <span className={`shrink-0 text-[10px] font-semibold ${
+                            alert.severity === 'critical' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'
+                          }`}>
+                            {alert.title}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-[#6b677e] dark:text-[#858198] truncate">
+                          {alert.detail}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <GlobalSearch />
       </div>
 

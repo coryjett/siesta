@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueries } from '@tanstack/react-query';
 import { useHomeData, useMyActionItems } from '../api/queries/home';
@@ -78,69 +78,6 @@ function SectionHeader({ title, count }: { title: string; count?: number }) {
           {count}
         </span>
       )}
-    </div>
-  );
-}
-
-// ── Account Health Alerts ──
-
-interface AccountAlert {
-  id: string;
-  accountId: string;
-  accountName: string;
-  severity: 'critical' | 'warning';
-  title: string;
-  detail: string;
-}
-
-const DISMISSED_ALERTS_KEY = 'siesta:dismissed-alerts';
-
-function loadDismissed(): Set<string> {
-  try {
-    const stored = localStorage.getItem(DISMISSED_ALERTS_KEY);
-    return stored ? new Set(JSON.parse(stored)) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function AlertCard({ alert, onDismiss }: { alert: AccountAlert; onDismiss: (id: string) => void }) {
-  const navigate = useNavigate();
-  const isCritical = alert.severity === 'critical';
-
-  return (
-    <div className={`flex items-center gap-3 rounded-lg border border-l-4 px-4 py-2.5 ${
-      isCritical
-        ? 'border-red-200 dark:border-red-800/50 border-l-red-500 bg-red-50/50 dark:bg-red-900/10'
-        : 'border-yellow-200 dark:border-yellow-800/50 border-l-yellow-500 bg-yellow-50/50 dark:bg-yellow-900/10'
-    }`}>
-      <span className={`h-2 w-2 shrink-0 rounded-full ${isCritical ? 'bg-red-500' : 'bg-yellow-500'}`} />
-      <button
-        type="button"
-        onClick={() => navigate({ to: '/accounts/$accountId', params: { accountId: alert.accountId } })}
-        className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2] hover:text-[#6b26d9] dark:hover:text-[#8249df] shrink-0 cursor-pointer"
-      >
-        {alert.accountName}
-      </button>
-      <span className={`text-xs font-medium shrink-0 ${
-        isCritical ? 'text-red-700 dark:text-red-300' : 'text-yellow-700 dark:text-yellow-300'
-      }`}>
-        {alert.title}
-      </span>
-      <span className="text-xs text-[#6b677e] dark:text-[#858198] truncate flex-1 text-right">
-        {alert.detail}
-      </span>
-      <button
-        type="button"
-        onClick={() => onDismiss(alert.id)}
-        className="shrink-0 p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
-        title="Dismiss"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#6b677e] dark:text-[#858198]">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
     </div>
   );
 }
@@ -240,143 +177,6 @@ export default function HomePage() {
     return map;
   }, [accountIds, interactionQueries, opportunities]);
 
-  // ── Account Health Alerts ──
-  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(loadDismissed);
-
-  const alerts = useMemo<AccountAlert[]>(() => {
-    const accounts = data?.myAccounts ?? [];
-    const now = Date.now();
-    const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
-    const result: AccountAlert[] = [];
-
-    for (const account of accounts) {
-      const health = healthMap.get(account.id);
-      const extras = accountExtras.get(account.id);
-      const days = extras?.daysSinceLastCall;
-      const closeDate = extras?.oppCloseDate;
-      const hasOpenOpp = extras?.oppStage != null;
-      const daysToClose = closeDate
-        ? Math.ceil((new Date(closeDate).getTime() - now) / (1000 * 60 * 60 * 24))
-        : null;
-      const closeText = daysToClose != null
-        ? daysToClose <= 0 ? 'past close date' : `closing in ${daysToClose}d`
-        : '';
-
-      const overdueCount = openAiItems.filter(
-        (i) => i.accountId === account.id && i.date && now - new Date(i.date).getTime() > fourteenDaysMs,
-      ).length;
-
-      // Critical: POC at risk, deal closing soon
-      if (health?.rating === 'red' && daysToClose != null && daysToClose <= 30) {
-        const amountText = extras?.oppAmount ? `${formatCompactCurrency(extras.oppAmount)} deal ` : '';
-        result.push({
-          id: `${account.id}:poc-risk-closing`,
-          accountId: account.id,
-          accountName: account.name,
-          severity: 'critical',
-          title: 'POC at risk',
-          detail: `Red POC health with ${amountText}${closeText}`,
-        });
-      }
-
-      // Critical: Stale account with open deal
-      if (days != null && days > 14 && hasOpenOpp) {
-        result.push({
-          id: `${account.id}:stale-open-deal`,
-          accountId: account.id,
-          accountName: account.name,
-          severity: 'critical',
-          title: 'Stale account',
-          detail: `No calls in ${days}d with open opportunity`,
-        });
-      }
-
-      // Warning: POC health declining
-      if (health?.rating === 'yellow') {
-        result.push({
-          id: `${account.id}:poc-yellow`,
-          accountId: account.id,
-          accountName: account.name,
-          severity: 'warning',
-          title: 'POC health declining',
-          detail: health.reason || 'Yellow POC health',
-        });
-      }
-
-      // Warning: Many overdue action items
-      if (overdueCount >= 3) {
-        result.push({
-          id: `${account.id}:many-overdue`,
-          accountId: account.id,
-          accountName: account.name,
-          severity: 'warning',
-          title: 'Overdue action items',
-          detail: `${overdueCount} action items overdue (>14 days)`,
-        });
-      }
-
-      // Warning: Deal closing soon, no recent call
-      if (daysToClose != null && daysToClose <= 30 && days != null && days > 7) {
-        result.push({
-          id: `${account.id}:closing-no-call`,
-          accountId: account.id,
-          accountName: account.name,
-          severity: 'warning',
-          title: 'Deal closing soon',
-          detail: `${closeText}, last call ${days}d ago`,
-        });
-      }
-    }
-
-    // Sort: critical first, then by close date (soonest first)
-    result.sort((a, b) => {
-      if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
-      const aClose = accountExtras.get(a.accountId)?.oppCloseDate;
-      const bClose = accountExtras.get(b.accountId)?.oppCloseDate;
-      if (aClose && bClose) return new Date(aClose).getTime() - new Date(bClose).getTime();
-      if (aClose) return -1;
-      if (bClose) return 1;
-      return 0;
-    });
-
-    return result;
-  }, [data?.myAccounts, healthMap, accountExtras, openAiItems]);
-
-  // Clean up stale dismissals so alerts reappear when conditions change
-  useEffect(() => {
-    const activeIds = new Set(alerts.map((a) => a.id));
-    setDismissedAlerts((prev) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (activeIds.has(id)) {
-          next.add(id);
-        } else {
-          changed = true;
-        }
-      }
-      if (changed) {
-        localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify([...next]));
-        return next;
-      }
-      return prev;
-    });
-  }, [alerts]);
-
-  const visibleAlerts = useMemo(
-    () => alerts.filter((a) => !dismissedAlerts.has(a.id)),
-    [alerts, dismissedAlerts],
-  );
-
-  const dismissAlert = useCallback((id: string) => {
-    setDismissedAlerts((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify([...next]));
-      return next;
-    });
-  }, []);
-
   if (isLoading) return <PageLoading />;
 
   if (error) {
@@ -418,16 +218,6 @@ export default function HomePage() {
           />
         </div>
       </div>
-
-      {/* Needs Attention alerts */}
-      {visibleAlerts.length > 0 && (
-        <div className="space-y-2">
-          <SectionHeader title="Needs Attention" count={visibleAlerts.length} />
-          {visibleAlerts.map((alert) => (
-            <AlertCard key={alert.id} alert={alert} onDismiss={dismissAlert} />
-          ))}
-        </div>
-      )}
 
       {/* Two-column layout: Accounts + Action Items */}
       <div className="grid grid-cols-1 gap-4 md:gap-8 xl:grid-cols-5">
