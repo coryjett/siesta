@@ -107,6 +107,48 @@ export function useCallCoaching() {
   });
 }
 
+// ── Win/Loss Analysis types ──
+
+export interface WinLossStats {
+  totalClosed: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalWonAmount: number;
+  totalLostAmount: number;
+  avgWonAmount: number;
+  avgLostAmount: number;
+}
+
+export interface WinLossFactor {
+  factor: string;
+  detail: string;
+  accounts: string[];
+}
+
+export interface WinLossRecommendation {
+  title: string;
+  detail: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface WinLossAnalysisResponse {
+  summary: string;
+  stats: WinLossStats;
+  winFactors: WinLossFactor[];
+  lossFactors: WinLossFactor[];
+  recommendations: WinLossRecommendation[];
+}
+
+export function useWinLossAnalysis() {
+  return useQuery<WinLossAnalysisResponse>({
+    queryKey: ['win-loss-analysis'],
+    queryFn: () => api.get<WinLossAnalysisResponse>('/win-loss-analysis'),
+    staleTime: 4 * 60 * 60 * 1000, // 4 hours — matches server Redis TTL
+    retry: 1,
+  });
+}
+
 export interface WarmupStatus {
   status: 'idle' | 'warming' | 'complete' | 'error';
   phase: string;

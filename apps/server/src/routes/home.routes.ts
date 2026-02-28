@@ -3,8 +3,8 @@ import { requireAuth } from '../auth/guards.js';
 import { getHomepageData } from '../services/mcp-home.service.js';
 import { getUserActionItemsAcrossAccounts } from '../services/action-items.service.js';
 import { getUpcomingMeetings } from '../services/meetings.service.js';
-import { generateInsights, generateCompetitiveAnalysis, generateCallCoaching } from '../services/openai-summary.service.js';
-import { listAccounts } from '../services/mcp-accounts.service.js';
+import { generateInsights, generateCompetitiveAnalysis, generateCallCoaching, generateWinLossAnalysis } from '../services/openai-summary.service.js';
+import { listAccounts, getAccountOpportunities } from '../services/mcp-accounts.service.js';
 import { cachedCall, getCache } from '../services/cache.service.js';
 import { logger } from '../utils/logger.js';
 
@@ -185,6 +185,88 @@ export async function homeRoutes(app: FastifyInstance) {
       return reply.send(result ?? emptyResponse);
     } catch (err) {
       logger.error({ err, userId }, '[call-coaching] Failed to generate call coaching');
+      return reply.send(emptyResponse);
+    }
+  });
+
+  /**
+   * GET /api/win-loss-analysis
+   * AI-generated win/loss analysis from closed opportunities and Gong call briefs.
+   * Cached 4 hours per user.
+   */
+  app.get('/api/win-loss-analysis', async (request, reply) => {
+    const userName = request.user.name;
+    const userEmail = request.user.email;
+    const userId = request.user.id;
+    const emptyResponse = {
+      summary: '',
+      stats: { totalClosed: 0, wins: 0, losses: 0, winRate: 0, totalWonAmount: 0, totalLostAmount: 0, avgWonAmount: 0, avgLostAmount: 0 },
+      winFactors: [],
+      lossFactors: [],
+      recommendations: [],
+    };
+
+    try {
+      // Fast path: return cached analysis without fetching account data
+      const cached = await getCache<Record<string, unknown>>(`openai:winloss:${userId}`);
+      if (cached) {
+        return reply.send(cached);
+      }
+
+      // Cache miss: fetch account data and opportunities
+      const data = await getHomepageData(userName, userEmail);
+
+      const userAccounts = (data.myAccounts ?? []).map((a: Record<string, unknown>) => ({
+        id: a.id as string,
+        name: a.name as string,
+      }));
+
+      if (userAccounts.length === 0) {
+        return reply.send(emptyResponse);
+      }
+
+      // Fetch opportunities for user's accounts in parallel
+      const oppResults = await Promise.allSettled(
+        userAccounts.map((acct: { id: string; name: string }) =>
+          getAccountOpportunities(acct.id).then((opps) => ({
+            accountId: acct.id,
+            accountName: acct.name,
+            opps: opps as Array<Record<string, unknown>>,
+          })),
+        ),
+      );
+
+      // Filter to closed opportunities
+      const closedOpps: Array<{
+        id: string; name: string; stage: string; amount: number | null;
+        closeDate: string | null; isWon: boolean; accountId: string; accountName: string;
+      }> = [];
+
+      for (const r of oppResults) {
+        if (r.status === 'fulfilled') {
+          for (const o of r.value.opps) {
+            const stage = String(o.stage ?? '').toLowerCase();
+            const isClosed = o.isClosed === true || o.is_closed === true || stage.includes('closed');
+            if (!isClosed) continue;
+            const isWon = o.isWon === true || o.is_won === true || stage.includes('closed won');
+            closedOpps.push({
+              id: String(o.id),
+              name: String(o.name ?? ''),
+              stage: String(o.stage ?? ''),
+              amount: typeof o.amount === 'number' ? o.amount : (typeof o.arr === 'number' ? o.arr : null),
+              closeDate: (o.closeDate ?? o.close_date ?? null) as string | null,
+              isWon,
+              accountId: r.value.accountId,
+              accountName: r.value.accountName,
+            });
+          }
+        }
+      }
+
+      const result = await generateWinLossAnalysis(userId, userAccounts, closedOpps);
+      return reply.send(result ?? emptyResponse);
+    } catch (err) {
+      logger.error({ err, userId }, '[win-loss] Failed to generate win/loss analysis');
       return reply.send(emptyResponse);
     }
   });

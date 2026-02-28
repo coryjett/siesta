@@ -1174,6 +1174,39 @@ export interface CompetitiveAnalysisResult {
   competitiveThreats: CompetitiveThreat[];
 }
 
+// ── Win/Loss Analysis types ──
+
+export interface WinLossStats {
+  totalClosed: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalWonAmount: number;
+  totalLostAmount: number;
+  avgWonAmount: number;
+  avgLostAmount: number;
+}
+
+export interface WinLossFactor {
+  factor: string;
+  detail: string;
+  accounts: string[];
+}
+
+export interface WinLossRecommendation {
+  title: string;
+  detail: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface WinLossAnalysisResult {
+  summary: string;
+  stats: WinLossStats;
+  winFactors: WinLossFactor[];
+  lossFactors: WinLossFactor[];
+  recommendations: WinLossRecommendation[];
+}
+
 // ── Call Coaching types ──
 
 export interface CoachingMetric {
@@ -1598,6 +1631,154 @@ Be specific and constructive. Reference actual patterns from the transcripts. Re
     } catch (err) {
       logger.error({ err }, 'Failed to generate call quality analysis with OpenAI');
       return null;
+    }
+  });
+}
+
+/**
+ * Generate win/loss analysis by correlating closed opportunities with Gong call
+ * briefs. Computes deterministic stats from opportunity data, then uses AI to
+ * identify patterns behind wins and losses.
+ * Cached 4 hours per user.
+ */
+export async function generateWinLossAnalysis(
+  userId: string,
+  userAccounts: Array<{ id: string; name: string }>,
+  closedOpps: Array<{ id: string; name: string; stage: string; amount: number | null; closeDate: string | null; isWon: boolean; accountId: string; accountName: string }>,
+): Promise<WinLossAnalysisResult | null> {
+  // Compute deterministic stats regardless of AI availability
+  const wins = closedOpps.filter((o) => o.isWon);
+  const losses = closedOpps.filter((o) => !o.isWon);
+  const totalWonAmount = wins.reduce((sum, o) => sum + (o.amount ?? 0), 0);
+  const totalLostAmount = losses.reduce((sum, o) => sum + (o.amount ?? 0), 0);
+  const stats: WinLossStats = {
+    totalClosed: closedOpps.length,
+    wins: wins.length,
+    losses: losses.length,
+    winRate: closedOpps.length > 0 ? Math.round((wins.length / closedOpps.length) * 100) : 0,
+    totalWonAmount,
+    totalLostAmount,
+    avgWonAmount: wins.length > 0 ? Math.round(totalWonAmount / wins.length) : 0,
+    avgLostAmount: losses.length > 0 ? Math.round(totalLostAmount / losses.length) : 0,
+  };
+
+  const client = getClient();
+  if (!client) {
+    logger.warn('OpenAI API key not configured, returning stats-only win/loss analysis');
+    return { summary: '', stats, winFactors: [], lossFactors: [], recommendations: [] };
+  }
+
+  if (closedOpps.length === 0) return null;
+
+  const cacheKey = `openai:winloss:${userId}`;
+
+  return cachedCall<WinLossAnalysisResult | null>(cacheKey, 14400, async () => {
+    try {
+      // Gather unique account IDs from closed opps
+      const accountIds = [...new Set(closedOpps.map((o) => o.accountId))];
+      const accountNameMap = new Map(closedOpps.map((o) => [o.accountId, o.accountName]));
+
+      // Collect Gong call briefs per account (up to 8 calls each)
+      const sectionResults = await Promise.all(
+        accountIds.map(async (accountId) => {
+          const accountName = accountNameMap.get(accountId) ?? accountId;
+          const parts: string[] = [`=== ${accountName} (${accountId}) ===`];
+
+          // List opportunities for this account
+          const accountOpps = closedOpps.filter((o) => o.accountId === accountId);
+          for (const opp of accountOpps) {
+            parts.push(`Opportunity: ${opp.name} | Stage: ${opp.stage} | Amount: ${opp.amount ?? 'N/A'} | Close Date: ${opp.closeDate ?? 'N/A'} | Outcome: ${opp.isWon ? 'WON' : 'LOST'}`);
+          }
+
+          // Fetch Gong call briefs
+          const calls = await getAccountInteractions(accountId, { sourceTypes: ['gong_call'] }).catch(() => []);
+          const callsArr = calls as Array<Record<string, unknown>>;
+          const callTitles = [...new Set(
+            callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
+          )].slice(0, 8);
+
+          if (callTitles.length > 0) {
+            const briefs = await Promise.all(
+              callTitles.map(async (title) => {
+                const brief = await generateGongCallBrief(accountId, title).catch(() => null);
+                return brief ? `[Call] ${title}:\n${brief}` : null;
+              }),
+            );
+            const validBriefs = briefs.filter(Boolean);
+            if (validBriefs.length > 0) {
+              parts.push(validBriefs.join('\n'));
+            }
+          }
+
+          return parts.length > 1 ? parts.join('\n') : null;
+        }),
+      );
+      const sections = sectionResults.filter(Boolean) as string[];
+
+      if (sections.length === 0) {
+        return { summary: '', stats, winFactors: [], lossFactors: [], recommendations: [] };
+      }
+
+      logger.info(
+        { userId, accounts: accountIds.length, closedOpps: closedOpps.length },
+        '[win-loss] Sending to OpenAI',
+      );
+
+      const response = await client.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content:
+              `You are a win/loss analyst for a sales engineering team. You are given closed opportunities (won and lost) along with Gong call briefs from those accounts. Your job is to identify patterns that correlate with winning or losing deals.
+
+Analyze the opportunity outcomes alongside the Gong call content to identify:
+
+1. **Win Factors** — Patterns, behaviors, or themes present in won deals. What did the team do well? What account characteristics or engagement patterns correlate with wins?
+2. **Loss Factors** — Patterns, behaviors, or themes present in lost deals. What went wrong? Were there missed signals, competitive losses, timing issues, or engagement gaps?
+3. **Recommendations** — Actionable guidance based on the win/loss patterns. What should the team do more of? What should they change?
+
+Return a JSON object:
+{
+  "summary": "<2-3 sentence executive summary of win/loss patterns>",
+  "winFactors": [
+    { "factor": "<short pattern name>", "detail": "<explanation of the pattern>", "accounts": ["account names where this was observed"] }
+  ],
+  "lossFactors": [
+    { "factor": "<short pattern name>", "detail": "<explanation of the pattern>", "accounts": ["account names where this was observed"] }
+  ],
+  "recommendations": [
+    { "title": "<short recommendation>", "detail": "<specific actionable guidance>", "priority": "high"|"medium"|"low" }
+  ]
+}
+
+Return 3-6 items per array based on what the data supports. Be specific and reference actual patterns from the data. Do not fabricate patterns — only report what is supported by the opportunity outcomes and call content. "high" priority = immediate action needed, "medium" = should address soon, "low" = nice to have.
+
+Return ONLY valid JSON, no markdown fences or other text.`,
+          },
+          {
+            role: 'user',
+            content: `Analyze win/loss patterns across these ${closedOpps.length} closed opportunities (${wins.length} won, ${losses.length} lost):\n\n${sections.join('\n\n')}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 3000,
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+      const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(jsonStr);
+
+      return {
+        summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+        stats,
+        winFactors: Array.isArray(parsed.winFactors) ? parsed.winFactors : [],
+        lossFactors: Array.isArray(parsed.lossFactors) ? parsed.lossFactors : [],
+        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+      };
+    } catch (err) {
+      logger.error({ err }, 'Failed to generate win/loss analysis with OpenAI');
+      return { summary: '', stats, winFactors: [], lossFactors: [], recommendations: [] };
     }
   });
 }

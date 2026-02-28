@@ -1,17 +1,18 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useInsights, useCompetitiveAnalysis, useCallCoaching, useWarmupStatus } from '../../api/queries/insights';
+import { useInsights, useCompetitiveAnalysis, useCallCoaching, useWinLossAnalysis, useWarmupStatus } from '../../api/queries/insights';
 import { useHomeData } from '../../api/queries/home';
 import { PageLoading } from '../../components/common/loading';
 import Card from '../../components/common/card';
 
-type TabId = 'tech' | 'trends' | 'competitive' | 'coaching';
+type TabId = 'tech' | 'trends' | 'competitive' | 'coaching' | 'winloss';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'tech', label: 'Technology Patterns' },
   { id: 'trends', label: 'Conversation Trends' },
   { id: 'competitive', label: 'Competitive Analysis' },
   { id: 'coaching', label: 'Call Quality' },
+  { id: 'winloss', label: 'Win/Loss' },
 ];
 
 function useWarmingMessage(): string | undefined {
@@ -58,6 +59,7 @@ export default function InsightsPage() {
       {activeTab === 'trends' && <ConversationTrendsTab />}
       {activeTab === 'competitive' && <CompetitiveAnalysisTab />}
       {activeTab === 'coaching' && <CallCoachingTab />}
+      {activeTab === 'winloss' && <WinLossTab />}
     </div>
   );
 }
@@ -619,6 +621,189 @@ function CallCoachingTab() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Win/Loss Analysis Tab ──
+
+function WinLossTab() {
+  const navigate = useNavigate();
+  const { data, isLoading } = useWinLossAnalysis();
+  const { data: homeData } = useHomeData();
+  const warmingMessage = useWarmingMessage();
+
+  const accountMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of (homeData?.myAccounts ?? []) as Array<{ id: string; name: string }>) {
+      map.set(a.name.toLowerCase(), a.id);
+    }
+    return map;
+  }, [homeData]);
+
+  if (isLoading) return <PageLoading message={warmingMessage} />;
+
+  if (!data || data.stats.totalClosed === 0) {
+    return (
+      <EmptyState message="No closed opportunities found across your accounts. Win/loss analysis requires closed-won and closed-lost deals." />
+    );
+  }
+
+  const { stats } = data;
+  const winRateColor =
+    stats.winRate >= 60
+      ? 'text-green-600 dark:text-green-400'
+      : stats.winRate >= 40
+        ? 'text-yellow-600 dark:text-yellow-400'
+        : 'text-red-600 dark:text-red-400';
+  const winRateBg =
+    stats.winRate >= 60
+      ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+      : stats.winRate >= 40
+        ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
+
+  const formatAmount = (amount: number) => {
+    if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
+    if (amount >= 1_000) return `$${(amount / 1_000).toFixed(0)}K`;
+    return `$${amount.toLocaleString()}`;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Summary */}
+      {data.summary && (
+        <div className={`rounded-xl border p-6 ${winRateBg}`}>
+          <div className="flex items-center gap-6">
+            <div className="flex flex-col items-center">
+              <span className={`text-4xl font-bold tabular-nums ${winRateColor}`}>
+                {stats.winRate}%
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mt-1">
+                Win Rate
+              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-[#191726] dark:text-[#f2f2f2] leading-relaxed">
+                {data.summary}
+              </p>
+              <p className="mt-2 text-xs text-[#6b677e] dark:text-[#858198]">
+                Based on {stats.totalClosed} closed deal{stats.totalClosed !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats Bar */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Wins" value={String(stats.wins)} accent="text-green-600 dark:text-green-400" />
+        <StatCard label="Losses" value={String(stats.losses)} accent="text-red-600 dark:text-red-400" />
+        <StatCard label="Avg Won" value={formatAmount(stats.avgWonAmount)} accent="text-green-600 dark:text-green-400" />
+        <StatCard label="Avg Lost" value={formatAmount(stats.avgLostAmount)} accent="text-red-600 dark:text-red-400" />
+      </div>
+
+      {/* Win Factors */}
+      {data.winFactors.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-green-600 dark:text-green-400">
+            Win Factors
+          </h2>
+          {data.winFactors.map((factor, idx) => (
+            <div
+              key={idx}
+              className="rounded-xl border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10 p-4"
+            >
+              <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                {factor.factor}
+              </h3>
+              <p className="mt-1.5 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                {factor.detail}
+              </p>
+              {factor.accounts.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {factor.accounts.map((name) => (
+                    <AccountLink key={name} name={name} accountMap={accountMap} navigate={navigate} />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Loss Factors */}
+      {data.lossFactors.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
+            Loss Factors
+          </h2>
+          {data.lossFactors.map((factor, idx) => (
+            <div
+              key={idx}
+              className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10 p-4"
+            >
+              <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                {factor.factor}
+              </h3>
+              <p className="mt-1.5 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                {factor.detail}
+              </p>
+              {factor.accounts.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {factor.accounts.map((name) => (
+                    <AccountLink key={name} name={name} accountMap={accountMap} navigate={navigate} />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Recommendations */}
+      {data.recommendations.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+            Recommendations
+          </h2>
+          {data.recommendations.map((rec, idx) => (
+            <div
+              key={idx}
+              className={`rounded-xl border p-5 ${
+                rec.priority === 'high'
+                  ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'
+                  : rec.priority === 'medium'
+                    ? 'border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-900/10'
+                    : 'border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b]'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <SeverityBadge severity={rec.priority} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {rec.title}
+                  </p>
+                  <p className="mt-1.5 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                    {rec.detail}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-4 text-center">
+      <p className={`text-2xl font-bold tabular-nums ${accent}`}>{value}</p>
+      <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+        {label}
+      </p>
     </div>
   );
 }
