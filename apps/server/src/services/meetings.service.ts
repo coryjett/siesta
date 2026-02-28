@@ -43,9 +43,9 @@ export async function getUpcomingMeetings(
           .filter((i) => {
             const participants = (i.participants ?? []) as Array<string | Record<string, unknown>>;
 
-            // If MCP doesn't provide participants, include the meeting —
-            // it's already on one of the user's accounts (CSE owner or interaction participant)
-            if (participants.length === 0) return true;
+            // Skip meetings with no participant data — we query all accounts
+            // so we can't assume the user is involved
+            if (participants.length === 0) return false;
 
             const nameLower = userName.toLowerCase();
             const emailLower = userEmail.toLowerCase();

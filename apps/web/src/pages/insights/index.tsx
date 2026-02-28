@@ -1,24 +1,31 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useQueries } from '@tanstack/react-query';
-import { useInsights } from '../../api/queries/insights';
-import { useMyActionItems, useHomeData } from '../../api/queries/home';
-import { useOpportunities } from '../../api/queries/opportunities';
-import { useCompleteActionItem, useUncompleteActionItem } from '../../api/queries/accounts';
-import type { POCSummaryResponse } from '../../api/queries/accounts';
-import { api } from '../../api/client';
+import { useInsights, useCompetitiveAnalysis, useCallCoaching, useWarmupStatus } from '../../api/queries/insights';
+import { useHomeData } from '../../api/queries/home';
 import { PageLoading } from '../../components/common/loading';
 import Card from '../../components/common/card';
-import { formatDate, formatRelative } from '../../lib/date';
 
-type TabId = 'tech' | 'trends' | 'pocs' | 'actions';
+type TabId = 'tech' | 'trends' | 'competitive' | 'coaching';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'tech', label: 'Technology Patterns' },
   { id: 'trends', label: 'Conversation Trends' },
-  { id: 'pocs', label: 'POC Activity' },
-  { id: 'actions', label: 'Action Items' },
+  { id: 'competitive', label: 'Competitive Analysis' },
+  { id: 'coaching', label: 'Call Quality' },
 ];
+
+function useWarmingMessage(): string | undefined {
+  const { data } = useWarmupStatus();
+  if (!data || data.status !== 'warming') return undefined;
+  const phaseLabels: Record<string, string> = {
+    'gong-briefs': 'Generating call briefs',
+    'contact-insights': 'Analyzing contacts',
+    'poc-summaries': 'Generating POC summaries',
+    'action-items': 'Extracting action items',
+  };
+  const phaseLabel = phaseLabels[data.phase] ?? 'Processing data';
+  return `Cache is still warming up (${phaseLabel}). This may take a moment.`;
+}
 
 export default function InsightsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('tech');
@@ -49,8 +56,8 @@ export default function InsightsPage() {
 
       {activeTab === 'tech' && <TechnologyPatternsTab />}
       {activeTab === 'trends' && <ConversationTrendsTab />}
-      {activeTab === 'pocs' && <POCActivityTab />}
-      {activeTab === 'actions' && <ActionItemsTab />}
+      {activeTab === 'competitive' && <CompetitiveAnalysisTab />}
+      {activeTab === 'coaching' && <CallCoachingTab />}
     </div>
   );
 }
@@ -61,6 +68,7 @@ function TechnologyPatternsTab() {
   const navigate = useNavigate();
   const { data, isLoading } = useInsights();
   const { data: homeData } = useHomeData();
+  const warmingMessage = useWarmingMessage();
 
   const accountMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -70,7 +78,7 @@ function TechnologyPatternsTab() {
     return map;
   }, [homeData]);
 
-  if (isLoading) return <PageLoading />;
+  if (isLoading) return <PageLoading message={warmingMessage} />;
 
   const patterns = data?.technologyPatterns ?? [];
 
@@ -142,6 +150,7 @@ function TechnologyPatternsTab() {
 function ConversationTrendsTab() {
   const navigate = useNavigate();
   const { data, isLoading } = useInsights();
+  const warmingMessage = useWarmingMessage();
   const { data: homeData } = useHomeData();
 
   const accountMap = useMemo(() => {
@@ -152,7 +161,7 @@ function ConversationTrendsTab() {
     return map;
   }, [homeData]);
 
-  if (isLoading) return <PageLoading />;
+  if (isLoading) return <PageLoading message={warmingMessage} />;
 
   const trends = data?.conversationTrends ?? [];
 
@@ -239,430 +248,371 @@ function TrendBadge({ direction }: { direction: 'rising' | 'stable' | 'declining
   );
 }
 
-// ── POC Activity Tab ──
 
-function POCActivityTab() {
+// ── Competitive Analysis Tab ──
+
+function CompetitiveAnalysisTab() {
   const navigate = useNavigate();
-  const { data: homeData, isLoading: homeLoading } = useHomeData();
-  const { data: opportunities } = useOpportunities();
+  const { data, isLoading } = useCompetitiveAnalysis();
+  const { data: homeData } = useHomeData();
+  const warmingMessage = useWarmingMessage();
 
-  const myAccounts = useMemo(() => {
-    return (homeData?.myAccounts ?? []) as Array<{ id: string; name: string }>;
+  const accountMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of (homeData?.myAccounts ?? []) as Array<{ id: string; name: string }>) {
+      map.set(a.name.toLowerCase(), a.id);
+    }
+    return map;
   }, [homeData]);
 
-  const accountIds = useMemo(() => myAccounts.map((a) => a.id), [myAccounts]);
+  if (isLoading) return <PageLoading message={warmingMessage} />;
 
-  // Fetch POC summaries for all user accounts
-  const pocQueries = useQueries({
-    queries: accountIds.map((id) => ({
-      queryKey: ['accounts', id, 'poc-summary'],
-      queryFn: () => api.get<POCSummaryResponse>(`/accounts/${id}/poc-summary`),
-      staleTime: 60 * 60 * 1000,
-      enabled: accountIds.length > 0,
-    })),
-  });
+  const mentions = data?.competitorMentions ?? [];
+  const alignment = data?.productAlignment ?? [];
+  const threats = data?.competitiveThreats ?? [];
 
-  // Fetch interactions for staleness calculation
-  const interactionQueries = useQueries({
-    queries: accountIds.map((id) => ({
-      queryKey: ['accounts', id, 'interactions', { sourceTypes: ['gong_call'], limit: 1 }],
-      queryFn: () => api.get<Array<{ date: string }>>(`/accounts/${id}/interactions?sourceTypes=gong_call&limit=5`),
-      staleTime: 5 * 60 * 1000,
-      enabled: accountIds.length > 0,
-    })),
-  });
-
-  const pocRows = useMemo(() => {
-    const rows: Array<{
-      accountId: string;
-      accountName: string;
-      health: POCSummaryResponse['health'];
-      lastCallDate: string | null;
-      daysSinceLastCall: number | null;
-      oppStage: string | null;
-    }> = [];
-
-    myAccounts.forEach((account, idx) => {
-      const pocData = pocQueries[idx]?.data;
-      const interactions = interactionQueries[idx]?.data;
-
-      // Get last call date
-      const lastCall = Array.isArray(interactions)
-        ? interactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-        : null;
-      const lastCallDate = lastCall?.date ?? null;
-      const daysSinceLastCall = lastCallDate
-        ? Math.floor((Date.now() - new Date(lastCallDate).getTime()) / (1000 * 60 * 60 * 24))
-        : null;
-
-      // Get opportunity stage
-      const accountOpps = (opportunities ?? []).filter(
-        (o) => o.accountId === account.id && !o.isClosed,
-      );
-      const primaryOpp = accountOpps[0];
-
-      rows.push({
-        accountId: account.id,
-        accountName: account.name,
-        health: pocData?.health ?? null,
-        lastCallDate,
-        daysSinceLastCall,
-        oppStage: primaryOpp?.stage ?? null,
-      });
-    });
-
-    // Sort: stale POCs first (most days since last call), then accounts without calls
-    rows.sort((a, b) => {
-      // Accounts with no calls at top
-      if (a.daysSinceLastCall === null && b.daysSinceLastCall !== null) return -1;
-      if (a.daysSinceLastCall !== null && b.daysSinceLastCall === null) return 1;
-      if (a.daysSinceLastCall !== null && b.daysSinceLastCall !== null) {
-        return b.daysSinceLastCall - a.daysSinceLastCall;
-      }
-      return a.accountName.localeCompare(b.accountName);
-    });
-
-    return rows;
-  }, [myAccounts, pocQueries, interactionQueries, opportunities]);
-
-  if (homeLoading) return <PageLoading />;
-
-  if (pocRows.length === 0) {
-    return <EmptyState message="No account data available. Your accounts will appear here." />;
+  if (mentions.length === 0 && alignment.length === 0 && threats.length === 0) {
+    return (
+      <EmptyState message="No competitive intelligence detected across your accounts yet. Data is extracted from Gong call briefs." />
+    );
   }
 
   return (
-    <div className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] overflow-hidden">
-      {/* Header */}
-      <div className="grid grid-cols-[1fr_80px_100px_120px_100px] gap-2 px-4 py-2.5 border-b border-[#dedde4] dark:border-[#2a2734] bg-[#f6f5f9] dark:bg-[#1a1825]">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">Account</span>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] text-center">Health</span>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] text-center">Last Call</span>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">Opp Stage</span>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] text-center">Staleness</span>
-      </div>
-
-      {/* Rows */}
-      <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
-        {pocRows.map((row) => {
-          const isStale = row.daysSinceLastCall !== null && row.daysSinceLastCall > 14;
-          return (
+    <div className="space-y-6">
+      {/* Competitive Threats */}
+      {threats.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+            Competitive Threats
+          </h2>
+          {threats.map((threat, idx) => (
             <div
-              key={row.accountId}
-              className="grid grid-cols-[1fr_80px_100px_120px_100px] gap-2 px-4 py-3 items-center"
+              key={idx}
+              className={`rounded-xl border p-5 ${
+                threat.severity === 'high'
+                  ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'
+                  : threat.severity === 'medium'
+                    ? 'border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-900/10'
+                    : 'border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b]'
+              }`}
             >
-              <button
-                type="button"
-                onClick={() => navigate({ to: '/accounts/$accountId', params: { accountId: row.accountId } })}
-                className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] hover:text-[#6b26d9] dark:hover:text-[#8249df] text-left truncate"
-              >
-                {row.accountName}
-              </button>
-              <div className="flex justify-center">
-                <HealthDot rating={row.health?.rating ?? null} reason={row.health?.reason} />
-              </div>
-              <span className="text-xs text-[#6b677e] dark:text-[#858198] text-center">
-                {row.lastCallDate ? formatDate(row.lastCallDate) : '--'}
-              </span>
-              <span className="text-xs text-[#6b677e] dark:text-[#858198] truncate">
-                {row.oppStage ?? '--'}
-              </span>
-              <div className="flex justify-center">
-                {row.daysSinceLastCall !== null ? (
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    isStale
-                      ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
-                      : row.daysSinceLastCall > 7
-                        ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800'
-                        : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800'
-                  }`}>
-                    {row.daysSinceLastCall}d
-                  </span>
-                ) : (
-                  <span className="text-xs text-[#6b677e] dark:text-[#858198]">--</span>
-                )}
+              <div className="flex items-start gap-3">
+                <SeverityBadge severity={threat.severity} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {threat.threat}
+                  </p>
+                  <p className="mt-1.5 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                    {threat.recommendation}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {threat.accounts.map((name) => (
+                      <AccountLink key={name} name={name} accountMap={accountMap} navigate={navigate} />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {/* Competitor Landscape */}
+      {mentions.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+            Competitor Landscape
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {mentions.map((mention, idx) => (
+              <div
+                key={idx}
+                className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {mention.competitor}
+                  </h3>
+                  <span className="shrink-0 flex h-6 min-w-6 items-center justify-center rounded-full bg-[#6b26d9]/10 dark:bg-[#8249df]/20 px-2 text-xs font-bold text-[#6b26d9] dark:text-[#8249df] tabular-nums">
+                    {mention.mentionCount}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-[#dedde4] dark:border-[#2a2734] bg-[#eeedf3] dark:bg-[#1e1b29] px-2 py-0.5 text-[10px] font-semibold text-[#6b677e] dark:text-[#858198]">
+                    vs {mention.soloProduct}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                  {mention.context}
+                </p>
+                <div className="mt-3 rounded-lg bg-[#f6f5f9] dark:bg-[#1a1825] p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mb-1">
+                    Positioning
+                  </p>
+                  <p className="text-xs text-[#191726] dark:text-[#f2f2f2] leading-relaxed">
+                    {mention.positioning}
+                  </p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {mention.accounts.map((name) => (
+                    <AccountLink key={name} name={name} accountMap={accountMap} navigate={navigate} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Solo.io Product Alignment */}
+      {alignment.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+            Solo.io Product Alignment
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {alignment.map((product, idx) => (
+              <div
+                key={idx}
+                className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {product.product}
+                  </h3>
+                  <AdoptionStageBadge stage={product.adoptionStage} />
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {product.useCases.map((useCase, ucIdx) => (
+                    <div key={ucIdx} className="flex items-start gap-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#6b26d9] dark:bg-[#8249df]" />
+                      <span className="text-xs text-[#6b677e] dark:text-[#858198]">{useCase}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {product.accounts.map((name) => (
+                    <AccountLink key={name} name={name} accountMap={accountMap} navigate={navigate} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function HealthDot({ rating, reason }: { rating: 'green' | 'yellow' | 'red' | null; reason?: string }) {
-  if (!rating) {
-    return <span className="h-2.5 w-2.5 rounded-full bg-[#dedde4] dark:bg-[#2a2734]" title="No POC data" />;
-  }
-  const colors = {
-    green: 'bg-green-500',
-    yellow: 'bg-yellow-500',
-    red: 'bg-red-500',
-  };
+function SeverityBadge({ severity }: { severity: 'high' | 'medium' | 'low' }) {
+  const config = {
+    high: { label: 'High', bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800' },
+    medium: { label: 'Medium', bg: 'bg-yellow-50 dark:bg-yellow-900/20', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-200 dark:border-yellow-800' },
+    low: { label: 'Low', bg: 'bg-[#eeedf3] dark:bg-[#1e1b29]', text: 'text-[#6b677e] dark:text-[#858198]', border: 'border-[#dedde4] dark:border-[#2a2734]' },
+  }[severity];
+
   return (
-    <span
-      className={`h-2.5 w-2.5 rounded-full ${colors[rating]}`}
-      title={reason ?? rating}
-    />
+    <span className={`mt-0.5 shrink-0 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${config.bg} ${config.text} ${config.border}`}>
+      {config.label}
+    </span>
   );
 }
 
-// ── Action Items Tab ──
-
-function ActionItemsTab() {
-  const navigate = useNavigate();
-  const { data, isLoading } = useMyActionItems();
-  const completeAction = useCompleteActionItem();
-  const uncompleteAction = useUncompleteActionItem();
-  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
-  const [showCompleted, setShowCompleted] = useState(false);
-
-  const allItems = useMemo(() => data?.items ?? [], [data]);
-  const openItems = useMemo(() => allItems.filter((i) => i.status === 'open'), [allItems]);
-  const completedItems = useMemo(() => allItems.filter((i) => i.status === 'done'), [allItems]);
-
-  // Group by account, sorted by count descending
-  const grouped = useMemo(() => {
-    const map = new Map<string, { accountId: string; accountName: string; items: typeof openItems }>();
-    for (const item of openItems) {
-      if (!map.has(item.accountId)) {
-        map.set(item.accountId, { accountId: item.accountId, accountName: item.accountName, items: [] });
-      }
-      map.get(item.accountId)!.items.push(item);
-    }
-    return [...map.values()].sort((a, b) => b.items.length - a.items.length);
-  }, [openItems]);
-
-  if (isLoading) return <PageLoading />;
-
-  if (openItems.length === 0 && completedItems.length === 0) {
-    return <EmptyState message="No action items found across your accounts." />;
-  }
-
-  const now = Date.now();
-  const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
-
-  const toggleAccount = (accountId: string) => {
-    setExpandedAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(accountId)) next.delete(accountId);
-      else next.add(accountId);
-      return next;
-    });
-  };
+function AdoptionStageBadge({ stage }: { stage: 'evaluating' | 'testing' | 'deploying' | 'expanding' }) {
+  const config = {
+    evaluating: { label: 'Evaluating', bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800' },
+    testing: { label: 'Testing', bg: 'bg-yellow-50 dark:bg-yellow-900/20', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-200 dark:border-yellow-800' },
+    deploying: { label: 'Deploying', bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    expanding: { label: 'Expanding', bg: 'bg-[#6b26d9]/5 dark:bg-[#8249df]/10', text: 'text-[#6b26d9] dark:text-[#8249df]', border: 'border-[#6b26d9]/30 dark:border-[#8249df]/30' },
+  }[stage];
 
   return (
-    <div className="space-y-4">
-      {/* Heatmap summary */}
-      <div className="flex flex-wrap gap-2">
-        {grouped.map(({ accountId, accountName, items }) => (
-          <button
-            key={accountId}
-            type="button"
-            onClick={() => toggleAccount(accountId)}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-              expandedAccounts.has(accountId)
-                ? 'border-[#6b26d9] dark:border-[#8249df] bg-[#6b26d9]/5 dark:bg-[#8249df]/10'
-                : 'border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] hover:border-[#6b26d9]/50 dark:hover:border-[#8249df]/50'
-            }`}
-          >
-            <span className="font-medium text-[#191726] dark:text-[#f2f2f2] truncate max-w-[150px]">{accountName}</span>
-            <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums ${
-              items.length >= 5
-                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                : items.length >= 3
-                  ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
-                  : 'bg-[#6b26d9]/10 dark:bg-[#8249df]/20 text-[#6b26d9] dark:text-[#8249df]'
-            }`}>
-              {items.length}
+    <span className={`shrink-0 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${config.bg} ${config.text} ${config.border}`}>
+      {config.label}
+    </span>
+  );
+}
+
+// ── Call Quality Tab ──
+
+function CallCoachingTab() {
+  const navigate = useNavigate();
+  const { data, isLoading } = useCallCoaching();
+  const { data: homeData } = useHomeData();
+  const warmingMessage = useWarmingMessage();
+
+  const accountMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of (homeData?.myAccounts ?? []) as Array<{ id: string; name: string }>) {
+      map.set(a.name.toLowerCase(), a.id);
+    }
+    return map;
+  }, [homeData]);
+
+  if (isLoading) return <PageLoading message={warmingMessage} />;
+
+  if (!data || data.totalCallsAnalyzed === 0) {
+    return (
+      <EmptyState message="No call quality data available yet. Quality analysis is generated from your Gong call transcripts." />
+    );
+  }
+
+  const scoreColor =
+    data.overallScore >= 7
+      ? 'text-green-600 dark:text-green-400'
+      : data.overallScore >= 5
+        ? 'text-yellow-600 dark:text-yellow-400'
+        : 'text-red-600 dark:text-red-400';
+
+  const scoreBg =
+    data.overallScore >= 7
+      ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+      : data.overallScore >= 5
+        ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
+
+  const strengths = data.highlights.filter((h) => h.type === 'strength');
+  const improvements = data.highlights.filter((h) => h.type === 'improvement');
+
+  return (
+    <div className="space-y-6">
+      {/* Overall Score */}
+      <div className={`rounded-xl border p-6 ${scoreBg}`}>
+        <div className="flex items-center gap-6">
+          <div className="flex flex-col items-center">
+            <span className={`text-4xl font-bold tabular-nums ${scoreColor}`}>
+              {data.overallScore}
             </span>
-          </button>
-        ))}
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mt-1">
+              / 10
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-[#191726] dark:text-[#f2f2f2] leading-relaxed">
+              {data.summary}
+            </p>
+            <p className="mt-2 text-xs text-[#6b677e] dark:text-[#858198]">
+              Based on {data.totalCallsAnalyzed} call{data.totalCallsAnalyzed !== 1 ? 's' : ''} analyzed
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Expanded account items */}
-      {grouped
-        .filter(({ accountId }) => expandedAccounts.has(accountId))
-        .map(({ accountId, accountName, items }) => (
-          <Card key={accountId} title={accountName}>
-            <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60 -mt-1">
-              {items.map((item) => {
-                const isOverdue = item.date && (now - new Date(item.date).getTime() > fourteenDaysMs);
-                return (
-                  <div key={item.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                    <button
-                      type="button"
-                      onClick={() => completeAction.mutate({ accountId: item.accountId, hash: item.id })}
-                      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#dedde4] dark:border-[#2a2734] hover:border-[#6b26d9] dark:hover:border-[#8249df] transition-colors cursor-pointer"
-                    >
-                      <span className="h-2 w-2 rounded-sm bg-[#6b26d9]/40 dark:bg-[#8249df]/40" />
-                    </button>
-                    <div className="min-w-0 flex-1">
-                      <p className={`text-sm ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-[#191726] dark:text-[#f2f2f2]'}`}>
-                        {item.action}
-                        {isOverdue && (
-                          <span className="ml-2 inline-flex items-center rounded-full bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-300 uppercase">
-                            Overdue
-                          </span>
-                        )}
-                      </p>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                        {item.sourceType && item.recordId ? (
-                          <button
-                            type="button"
-                            onClick={() => navigate({
-                              to: '/interactions/$accountId/$sourceType/$recordId',
-                              params: { accountId: item.accountId, sourceType: item.sourceType, recordId: item.recordId! },
-                              search: { title: item.source },
-                            } as never)}
-                            className="inline-flex items-center gap-1 font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
-                          >
-                            <SourceBadge sourceType={item.sourceType} />
-                            {item.source}
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1">
-                            <SourceBadge sourceType={item.sourceType} />
-                            {item.source}
-                          </span>
-                        )}
-                        <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                        <span>{formatRelative(item.date)}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        ))}
+      {/* Metrics Grid */}
+      <div className="space-y-3">
+        <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+          Quality Metrics
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {data.metrics.map((metric, idx) => {
+            const metricColor =
+              metric.score >= 7
+                ? 'bg-green-500'
+                : metric.score >= 5
+                  ? 'bg-yellow-500'
+                  : 'bg-red-500';
+            const metricTextColor =
+              metric.score >= 7
+                ? 'text-green-600 dark:text-green-400'
+                : metric.score >= 5
+                  ? 'text-yellow-600 dark:text-yellow-400'
+                  : 'text-red-600 dark:text-red-400';
 
-      {/* Show all items if none expanded */}
-      {expandedAccounts.size === 0 && (
-        <Card title={`All Open Items (${openItems.length})`}>
-          <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60 -mt-1">
-            {openItems.map((item) => {
-              const isOverdue = item.date && (now - new Date(item.date).getTime() > fourteenDaysMs);
-              return (
-                <div key={item.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <button
-                    type="button"
-                    onClick={() => completeAction.mutate({ accountId: item.accountId, hash: item.id })}
-                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#dedde4] dark:border-[#2a2734] hover:border-[#6b26d9] dark:hover:border-[#8249df] transition-colors cursor-pointer"
-                  >
-                    <span className="h-2 w-2 rounded-sm bg-[#6b26d9]/40 dark:bg-[#8249df]/40" />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className={`text-sm ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-[#191726] dark:text-[#f2f2f2]'}`}>
-                      {item.action}
-                      {isOverdue && (
-                        <span className="ml-2 inline-flex items-center rounded-full bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-300 uppercase">
-                          Overdue
-                        </span>
-                      )}
-                    </p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                      <button
-                        type="button"
-                        onClick={() => navigate({ to: '/accounts/$accountId', params: { accountId: item.accountId } })}
-                        className="font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
-                      >
-                        {item.accountName}
-                      </button>
-                      <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                      {item.sourceType && item.recordId ? (
-                        <button
-                          type="button"
-                          onClick={() => navigate({
-                            to: '/interactions/$accountId/$sourceType/$recordId',
-                            params: { accountId: item.accountId, sourceType: item.sourceType, recordId: item.recordId! },
-                            search: { title: item.source },
-                          } as never)}
-                          className="inline-flex items-center gap-1 font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
-                        >
-                          <SourceBadge sourceType={item.sourceType} />
-                          {item.source}
-                        </button>
-                      ) : (
-                        <span className="inline-flex items-center gap-1">
-                          <SourceBadge sourceType={item.sourceType} />
-                          {item.source}
-                        </span>
-                      )}
-                      <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                      <span>{formatRelative(item.date)}</span>
-                    </div>
-                  </div>
+            return (
+              <div
+                key={idx}
+                className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-5"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {metric.label}
+                  </h3>
+                  <span className={`text-lg font-bold tabular-nums ${metricTextColor}`}>
+                    {metric.score}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* Completed items */}
-      {completedItems.length > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowCompleted(!showCompleted)}
-            className="flex items-center gap-2 mb-3 cursor-pointer"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={`text-[#6b677e] dark:text-[#858198] transition-transform ${showCompleted ? 'rotate-90' : ''}`}
-            >
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-            <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
-              Completed
-            </h2>
-            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#6b677e]/10 dark:bg-[#858198]/20 px-1.5 text-[10px] font-bold text-[#6b677e] dark:text-[#858198] tabular-nums">
-              {completedItems.length}
-            </span>
-          </button>
-
-          {showCompleted && (
-            <div className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
-              {completedItems.map((item) => (
-                <div key={item.id} className="flex items-start gap-3 px-4 py-3 opacity-50">
-                  <button
-                    type="button"
-                    onClick={() => uncompleteAction.mutate({ accountId: item.accountId, hash: item.id })}
-                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#6b26d9] bg-[#6b26d9] dark:border-[#8249df] dark:bg-[#8249df] transition-colors cursor-pointer"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="white" className="h-3.5 w-3.5">
-                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm line-through text-[#6b677e] dark:text-[#858198]">{item.action}</p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
-                      <button
-                        type="button"
-                        onClick={() => navigate({ to: '/accounts/$accountId', params: { accountId: item.accountId } })}
-                        className="font-medium text-[#6b26d9] dark:text-[#8249df] hover:underline cursor-pointer"
-                      >
-                        {item.accountName}
-                      </button>
-                      <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                      <span>{formatRelative(item.date)}</span>
-                      {item.completedAt && (
-                        <>
-                          <span className="text-[#dedde4] dark:text-[#2a2734]">|</span>
-                          <span>Completed {formatRelative(item.completedAt)}</span>
-                        </>
-                      )}
-                    </div>
+                {/* Score bar */}
+                <div className="mt-3 h-1.5 w-full rounded-full bg-[#eeedf3] dark:bg-[#1e1b29]">
+                  <div
+                    className={`h-1.5 rounded-full ${metricColor} transition-all`}
+                    style={{ width: `${metric.score * 10}%` }}
+                  />
+                </div>
+                <p className="mt-3 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                  {metric.detail}
+                </p>
+                {metric.suggestion && (
+                  <div className="mt-3 rounded-lg bg-[#f6f5f9] dark:bg-[#1a1825] p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mb-1">
+                      Suggestion
+                    </p>
+                    <p className="text-xs text-[#191726] dark:text-[#f2f2f2] leading-relaxed">
+                      {metric.suggestion}
+                    </p>
                   </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Highlights */}
+      {(strengths.length > 0 || improvements.length > 0) && (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          {/* Strengths */}
+          {strengths.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-green-600 dark:text-green-400">
+                Strengths
+              </h2>
+              {strengths.map((h, idx) => (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10 p-4"
+                >
+                  <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {h.title}
+                  </h3>
+                  <p className="mt-1.5 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                    {h.detail}
+                  </p>
+                  {h.accounts.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {h.accounts.map((name) => (
+                        <AccountLink key={name} name={name} accountMap={accountMap} navigate={navigate} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Areas for Improvement */}
+          {improvements.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Areas for Improvement
+              </h2>
+              {improvements.map((h, idx) => (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 p-4"
+                >
+                  <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {h.title}
+                  </h3>
+                  <p className="mt-1.5 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                    {h.detail}
+                  </p>
+                  {h.accounts.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {h.accounts.map((name) => (
+                        <AccountLink key={name} name={name} accountMap={accountMap} navigate={navigate} />
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

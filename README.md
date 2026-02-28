@@ -102,14 +102,14 @@ Sales Engineering portfolio management platform powered by MCP (Model Context Pr
 
 ## Key Features
 
-- **Portfolio Dashboard** -- Personal view of accounts with POC health indicators, action items, and open pipeline stats
+- **Portfolio Dashboard** -- Personal view of accounts with POC health, opp stage/amount/close date, staleness tracking, and action items grouped by account with overdue badges
 - **Account Detail** -- AI-generated summaries, POC status with health ratings, grouped email threads, Gong call briefs, meetings, notes
 - **Ambient Calculator** -- Upload Kubernetes bug reports (.tar.gz, .tgz, .zip) to calculate sidecar-to-ambient mesh migration savings with PDF export. Supports both YAML and `kubectl describe nodes` formats. Auto-fetches cloud instance pricing (AWS, Azure, GCP) with manual override. ROI calculated as cumulative savings / cumulative investment ratio.
 - **Action Items** -- AI-extracted action items from Gong calls and interactions with completion tracking. Incremental extraction avoids re-analyzing previously processed calls.
 - **Opportunities** -- Kanban board with fiscal quarter filtering and POC health dots
 - **Meeting Briefs** -- AI-generated prep briefs with talking points and context
 - **Team Resources & Tools** -- Shared bookmarks and tool links for the SE team
-- **Insights** -- Portfolio analytics and AI-generated insights including competitive analysis (competitor mentions, product alignment, competitive threats)
+- **Insights** -- Portfolio analytics with AI-generated tabs: Technology Patterns, Conversation Trends, Competitive Analysis (competitor mentions, product alignment, threats), and Call Quality (8 scored dimensions with suggestions, cached 24h)
 - **Señor Bot** -- AI chat assistant with MCP tool access and support integration
 - **Semantic Search** -- Full-text search across all interactions with inline expansion
 

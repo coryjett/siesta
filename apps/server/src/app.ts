@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import path from 'node:path';
@@ -24,6 +25,7 @@ import { toolsRoutes } from './routes/tools.routes.js';
 import { resourcesRoutes } from './routes/resources.routes.js';
 import { pricingRoutes } from './routes/pricing.routes.js';
 import { bugReportRoutes } from './routes/bug-report.routes.js';
+import { contactsRoutes } from './routes/contacts.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -38,6 +40,11 @@ export async function buildApp() {
 
   await app.register(cookie, {
     secret: env.SESSION_SECRET,
+  });
+
+  // Multipart file uploads (10MB limit)
+  await app.register(multipart, {
+    limits: { fileSize: 10 * 1024 * 1024 },
   });
 
   // Rate limiting — trustProxy makes request.ip use X-Forwarded-For
@@ -119,6 +126,7 @@ export async function buildApp() {
   await app.register(resourcesRoutes);
   await app.register(pricingRoutes);
   await app.register(bugReportRoutes);
+  await app.register(contactsRoutes);
 
   // Serve static frontend in production
   if (env.NODE_ENV === 'production') {

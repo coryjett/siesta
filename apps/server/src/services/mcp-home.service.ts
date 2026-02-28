@@ -154,7 +154,8 @@ export async function getHomepageData(userName?: string, userEmail?: string) {
           const openPipeline = openNonRenewal.reduce((sum, o) => sum + (o.arr ?? o.amount ?? 0), 0);
           return { ...account, openPipeline, hasOpenOpportunities: openNonRenewal.length > 0 };
         } catch {
-          return { ...account, openPipeline: null, hasOpenOpportunities: false };
+          // On failure, assume the account has opportunities so it isn't silently dropped
+          return { ...account, openPipeline: null, hasOpenOpportunities: true };
         }
       }),
     );
@@ -225,6 +226,7 @@ export async function getHomepageData(userName?: string, userEmail?: string) {
     return {
       portfolioStats: mapPortfolioStats(portfolioStatsRaw as Record<string, unknown>),
       myAccounts,
+      allUserAccountIds: candidateAccounts.map((a) => a.id),
       actionItems: filtered,
     };
   });

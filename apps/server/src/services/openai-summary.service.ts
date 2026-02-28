@@ -1174,6 +1174,30 @@ export interface CompetitiveAnalysisResult {
   competitiveThreats: CompetitiveThreat[];
 }
 
+// ── Call Coaching types ──
+
+export interface CoachingMetric {
+  label: string;
+  score: number;
+  detail: string;
+  suggestion: string;
+}
+
+export interface CoachingHighlight {
+  type: 'strength' | 'improvement';
+  title: string;
+  detail: string;
+  accounts: string[];
+}
+
+export interface CallCoachingResult {
+  overallScore: number;
+  totalCallsAnalyzed: number;
+  metrics: CoachingMetric[];
+  highlights: CoachingHighlight[];
+  summary: string;
+}
+
 /**
  * Generate cross-account insights by analyzing cached Gong briefs and POC
  * summaries across the user's accounts. For cross-team insights, also
@@ -1433,6 +1457,146 @@ Return 0-10 items per array based on what the data supports. Be specific and act
       };
     } catch (err) {
       logger.error({ err }, 'Failed to generate competitive analysis with OpenAI');
+      return null;
+    }
+  });
+}
+
+/**
+ * Generate call quality analysis by examining full Gong transcripts
+ * across the user's accounts. Analyzes discovery depth, technical quality,
+ * next steps clarity, and other conversation dimensions.
+ * Cached 24 hours per user.
+ */
+export async function generateCallCoaching(
+  userId: string,
+  userAccounts: Array<{ id: string; name: string }>,
+): Promise<CallCoachingResult | null> {
+  const client = getClient();
+  if (!client) {
+    logger.warn('OpenAI API key not configured, skipping call quality analysis');
+    return null;
+  }
+
+  if (userAccounts.length === 0) return null;
+
+  const cacheKey = `openai:coaching:${userId}`;
+
+  return cachedCall<CallCoachingResult | null>(cacheKey, 86400, async () => {
+    try {
+      // Collect full transcripts for call quality analysis
+      const transcriptResults = await Promise.all(
+        userAccounts.map(async (account) => {
+          const calls = await getAccountInteractions(account.id, {
+            sourceTypes: ['gong_call'],
+          }).catch(() => []);
+
+          const callsArr = calls as Array<Record<string, unknown>>;
+          const callTitles = [...new Set(
+            callsArr.map((c) => String(c.title ?? '')).filter(Boolean),
+          )].slice(0, 5); // Up to 5 calls per account
+
+          if (callTitles.length === 0) return [];
+
+          const transcripts = await Promise.all(
+            callTitles.map(async (title) => {
+              const data = await fetchFullGongTranscript(account.id, title).catch(() => null);
+              if (!data?.transcript) return null;
+              return {
+                accountName: account.name,
+                title: data.title,
+                transcript: data.transcript,
+              };
+            }),
+          );
+
+          return transcripts.filter(Boolean) as Array<{
+            accountName: string;
+            title: string;
+            transcript: string;
+          }>;
+        }),
+      );
+
+      const allTranscripts = transcriptResults.flat();
+
+      // Limit to 20 most recent calls total.
+      // Account-level filtering is already handled by getHomepageData() which
+      // identifies accounts via interaction participation (Gong calls, emails, etc).
+      const transcripts = allTranscripts.slice(0, 20);
+
+      if (transcripts.length === 0) return null;
+
+      // Build the input text — include speaker-labeled transcript content
+      const sections = transcripts.map((t) =>
+        `=== Call: ${t.title} (${t.accountName}) ===\n${t.transcript}`,
+      );
+
+      logger.info(
+        { userId, calls: transcripts.length, totalCalls: allTranscripts.length, accounts: userAccounts.length },
+        '[call-quality] Sending to OpenAI',
+      );
+
+      const response = await client.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content:
+              `You are an expert sales call quality analyst. Given Gong call transcripts from multiple customer calls, analyze the overall quality of these conversations. Note: the transcripts do not include speaker labels, so analyze the conversation as a whole rather than attributing dialogue to specific individuals.
+
+Analyze these 8 dimensions of call quality, scoring each 1-10:
+
+1. **Discovery Depth** — How well does the call uncover customer needs, pain points, and requirements? Are thoughtful, open-ended questions asked? Score 10 = excellent discovery, 1 = superficial.
+2. **Technical Depth** — Quality of technical discussions: clear explanations, appropriate detail for the audience, accurate information? Avoids unnecessary jargon?
+3. **Next Steps Clarity** — Do calls conclude with clear, specific action items and owners? Or vague "we'll follow up" statements?
+4. **Objection Handling** — When concerns arise, are they acknowledged and addressed effectively? Is evidence provided? Are objections dismissed or handled constructively?
+5. **Competitive Handling** — When competitors are mentioned, are responses confident and factual? Is positioning done well without trash-talking?
+6. **Customer Engagement** — Signs of active customer engagement (asking questions, showing interest, requesting demos/trials) vs disengagement (short answers, topic changes)?
+7. **Value Articulation** — How well is business value communicated? Are benefits tied to specific customer outcomes rather than just features?
+8. **Meeting Productivity** — Is time used efficiently? Does the conversation stay focused and cover meaningful ground? Is there a clear agenda or direction?
+
+Also identify 3-5 highlights — specific strengths or areas for improvement observed across calls, with example account names.
+
+Return a JSON object:
+{
+  "overallScore": <1-10 weighted average>,
+  "totalCallsAnalyzed": <number>,
+  "metrics": [
+    { "label": "Discovery Depth", "score": <1-10>, "detail": "<what was observed>", "suggestion": "<specific improvement tip>" },
+    ...
+  ],
+  "highlights": [
+    { "type": "strength"|"improvement", "title": "<short title>", "detail": "<specific observation>", "accounts": ["account names where observed"] },
+    ...
+  ],
+  "summary": "<2-3 sentence executive summary of overall call quality across these accounts>"
+}
+
+Be specific and constructive. Reference actual patterns from the transcripts. Return ONLY valid JSON, no markdown fences or other text.`,
+          },
+          {
+            role: 'user',
+            content: `Analyze these ${transcripts.length} call transcripts for call quality:\n\n${sections.join('\n\n')}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 3000,
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+      const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(jsonStr);
+
+      return {
+        overallScore: typeof parsed.overallScore === 'number' ? parsed.overallScore : 5,
+        totalCallsAnalyzed: typeof parsed.totalCallsAnalyzed === 'number' ? parsed.totalCallsAnalyzed : transcripts.length,
+        metrics: Array.isArray(parsed.metrics) ? parsed.metrics : [],
+        highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
+        summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+      };
+    } catch (err) {
+      logger.error({ err }, 'Failed to generate call quality analysis with OpenAI');
       return null;
     }
   });
@@ -1876,15 +2040,17 @@ export async function warmInsightsForUser(userId: string, userName: string, user
   if (userAccounts.length === 0) return true;
 
   // Check which caches need warming
-  const [cachedInsights, cachedCompetitive] = await Promise.all([
+  const [cachedInsights, cachedCompetitive, cachedCoaching] = await Promise.all([
     getCache(`openai:insights:${userId}`),
     getCache(`openai:competitive:${userId}`),
+    getCache(`openai:coaching:${userId}`),
   ]);
 
-  // Phase 1: Warm cross-account AI analysis (insights + competitive) in parallel
+  // Phase 1: Warm cross-account AI analysis (insights + competitive + coaching) in parallel
   const aiTasks: Promise<unknown>[] = [];
   if (!cachedInsights) aiTasks.push(generateInsights(userId, userAccounts, allAccounts));
   if (!cachedCompetitive) aiTasks.push(generateCompetitiveAnalysis(userId, userAccounts));
+  if (!cachedCoaching) aiTasks.push(generateCallCoaching(userId, userAccounts));
   if (aiTasks.length > 0) await Promise.all(aiTasks);
 
   // Phase 2: Warm per-account data (POC summaries + action items) sequentially per account

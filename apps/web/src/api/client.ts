@@ -67,6 +67,50 @@ class ApiClient {
   delete<T>(path: string): Promise<T> {
     return this.request<T>(path, { method: 'DELETE' });
   }
+
+  async postFormData<T>(path: string, formData: FormData): Promise<T> {
+    const url = `${API_BASE}${path}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({
+        statusCode: response.status,
+        error: response.statusText,
+        message: 'An unexpected error occurred',
+      }));
+      if (response.status === 401) window.location.href = '/login';
+      const err = new Error(body.message ?? 'An unexpected error occurred');
+      Object.assign(err, body);
+      throw err;
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json();
+  }
+
+  async patchFormData<T>(path: string, formData: FormData): Promise<T> {
+    const url = `${API_BASE}${path}`;
+    const response = await fetch(url, {
+      method: 'PATCH',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({
+        statusCode: response.status,
+        error: response.statusText,
+        message: 'An unexpected error occurred',
+      }));
+      if (response.status === 401) window.location.href = '/login';
+      const err = new Error(body.message ?? 'An unexpected error occurred');
+      Object.assign(err, body);
+      throw err;
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json();
+  }
 }
 
 export const api = new ApiClient();

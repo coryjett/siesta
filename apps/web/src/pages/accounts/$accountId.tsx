@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from '@tanstack/react-router';
+import { useParams, useNavigate, Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useAccount,
@@ -852,6 +852,8 @@ const INSIGHT_LABELS: Record<string, string> = {
   hobbies: 'Hobbies',
   background: 'Background',
   travel: 'Travel',
+  engagement_style: 'Engagement Style',
+  concerns: 'Concerns',
   other: 'Other',
 };
 
@@ -860,11 +862,13 @@ function ContactsSection({
   isLoading,
   error,
   insights,
+  accountId,
 }: {
   contacts: Contact[] | undefined;
   isLoading: boolean;
   error: Error | null;
   insights?: ContactInsight[];
+  accountId: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [expandedInsights, setExpandedInsights] = useState<Set<string>>(new Set());
@@ -931,9 +935,13 @@ function ContactsSection({
                       </span>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate">
+                      <Link
+                        to="/contacts"
+                        search={{ search: contact.name ?? '', account: accountId }}
+                        className="text-sm font-medium text-[#191726] dark:text-[#f2f2f2] truncate hover:text-[#6b26d9] dark:hover:text-[#8249df] transition-colors"
+                      >
                         {contact.name ?? 'Unknown'}
-                      </p>
+                      </Link>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-[#6b677e] dark:text-[#858198]">
                         {contact.title && <span>{contact.title}</span>}
                         {contact.title && contact.email && (
@@ -1519,6 +1527,7 @@ export default function AccountDetailPage() {
           isLoading={contactsLoading}
           error={contactsError}
           insights={contactInsightsData?.insights}
+          accountId={accountId!}
         />
         <Card
           title={

@@ -44,3 +44,27 @@ spec:
   affinity:
     enablePodAntiAffinity: true
     topologyKey: kubernetes.io/hostname
+
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: siesta-cnpg-backup@field-engineering-us.iam.gserviceaccount.com
+
+  backup:
+    barmanObjectStore:
+      destinationPath: gs://siesta-db-backups/cnpg
+      googleCredentials:
+        gkeEnvironment: true
+    retentionPolicy: "30d"
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: siesta-daily-backup
+  namespace: siesta
+spec:
+  schedule: "0 0 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: postgres-cnpg
+  method: barmanObjectStore

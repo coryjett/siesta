@@ -3,7 +3,7 @@ import { requireAuth } from '../auth/guards.js';
 import { getHomepageData } from '../services/mcp-home.service.js';
 import { getUserActionItemsAcrossAccounts } from '../services/action-items.service.js';
 import { getUpcomingMeetings } from '../services/meetings.service.js';
-import { generateInsights } from '../services/openai-summary.service.js';
+import { generateInsights, generateCompetitiveAnalysis, generateCallCoaching } from '../services/openai-summary.service.js';
 import { listAccounts } from '../services/mcp-accounts.service.js';
 import { cachedCall, getCache } from '../services/cache.service.js';
 import { logger } from '../utils/logger.js';
@@ -65,8 +65,10 @@ export async function homeRoutes(app: FastifyInstance) {
     const userName = request.user.name;
     const userEmail = request.user.email;
 
-    const data = await getHomepageData(userName, userEmail);
-    const accounts = (data.myAccounts ?? []).map((a: Record<string, unknown>) => ({
+    // Fetch all accounts so we find meetings where the user is a participant
+    // on any account, not just accounts they own
+    const allAccountsRaw = await listAccounts();
+    const accounts = (allAccountsRaw as Array<Record<string, unknown>>).map((a) => ({
       id: a.id as string,
       name: a.name as string,
     }));
@@ -117,6 +119,72 @@ export async function homeRoutes(app: FastifyInstance) {
       return reply.send(result ?? emptyResponse);
     } catch (err) {
       logger.error({ err, userId }, '[insights] Failed to generate insights');
+      return reply.send(emptyResponse);
+    }
+  });
+
+  /**
+   * GET /api/competitive-analysis
+   * AI-generated competitive intelligence: competitor mentions, product
+   * alignment, and competitive threats. Cached 4 hours per user.
+   */
+  app.get('/api/competitive-analysis', async (request, reply) => {
+    const userName = request.user.name;
+    const userEmail = request.user.email;
+    const userId = request.user.id;
+    const emptyResponse = { competitorMentions: [], productAlignment: [], competitiveThreats: [] };
+
+    try {
+      // Fast path: return cached analysis without fetching account data
+      const cached = await getCache<Record<string, unknown>>(`openai:competitive:${userId}`);
+      if (cached) {
+        return reply.send(cached);
+      }
+
+      // Cache miss: fetch account data, then generate
+      const data = await getHomepageData(userName, userEmail);
+
+      const userAccounts = (data.myAccounts ?? []).map((a: Record<string, unknown>) => ({
+        id: a.id as string,
+        name: a.name as string,
+      }));
+
+      const result = await generateCompetitiveAnalysis(userId, userAccounts);
+      return reply.send(result ?? emptyResponse);
+    } catch (err) {
+      logger.error({ err, userId }, '[competitive-analysis] Failed to generate competitive analysis');
+      return reply.send(emptyResponse);
+    }
+  });
+
+  /**
+   * GET /api/call-coaching
+   * AI-generated call quality analysis from Gong transcripts.
+   * Cached 24 hours per user.
+   */
+  app.get('/api/call-coaching', async (request, reply) => {
+    const userId = request.user.id;
+    const emptyResponse = { overallScore: 0, totalCallsAnalyzed: 0, metrics: [], highlights: [], summary: '' };
+
+    try {
+      // Fast path: return cached analysis without fetching account data
+      const cached = await getCache<Record<string, unknown>>(`openai:coaching:${userId}`);
+      if (cached) {
+        return reply.send(cached);
+      }
+
+      // Cache miss: fetch account data, then generate
+      const data = await getHomepageData(request.user.name, request.user.email);
+
+      const userAccounts = (data.myAccounts ?? []).map((a: Record<string, unknown>) => ({
+        id: a.id as string,
+        name: a.name as string,
+      }));
+
+      const result = await generateCallCoaching(userId, userAccounts);
+      return reply.send(result ?? emptyResponse);
+    } catch (err) {
+      logger.error({ err, userId }, '[call-coaching] Failed to generate call coaching');
       return reply.send(emptyResponse);
     }
   });

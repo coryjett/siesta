@@ -228,6 +228,8 @@ export interface ContactPersonalInfo {
   hobbies?: ContactPersonalInfoEntry;
   background?: ContactPersonalInfoEntry;
   travel?: ContactPersonalInfoEntry;
+  engagement_style?: ContactPersonalInfoEntry;
+  concerns?: ContactPersonalInfoEntry;
   other?: ContactPersonalInfoEntry;
 }
 

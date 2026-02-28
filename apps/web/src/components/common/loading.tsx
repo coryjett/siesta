@@ -36,10 +36,17 @@ export function Spinner({ size = 'md', className }: SpinnerProps) {
   );
 }
 
-export function PageLoading() {
+interface PageLoadingProps {
+  message?: string;
+}
+
+export function PageLoading({ message }: PageLoadingProps = {}) {
   return (
-    <div className="flex items-center justify-center min-h-[400px]">
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
       <Spinner size="lg" />
+      {message && (
+        <p className="text-sm text-[#6b677e] dark:text-[#858198]">{message}</p>
+      )}
     </div>
   );
 }

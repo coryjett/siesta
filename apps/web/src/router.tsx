@@ -125,6 +125,12 @@ const ambientCalculatorRoute = createRoute({
   ),
 });
 
+const contactsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/contacts',
+  component: lazyRouteComponent(() => import('./pages/contacts/index')),
+});
+
 const resourcesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/resources',
@@ -151,6 +157,7 @@ const routeTree = rootRoute.addChildren([
     opportunitiesRoute,
     opportunityDetailRoute,
     meetingBriefRoute,
+    contactsRoute,
     insightsRoute,
     toolsRoute,
     ambientCalculatorRoute,

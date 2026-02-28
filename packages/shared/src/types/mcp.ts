@@ -202,6 +202,7 @@ export interface AccountActionItem {
 export interface HomeData {
   portfolioStats: PortfolioStats;
   myAccounts: Account[];
+  allUserAccountIds: string[];
   actionItems: AccountActionItem[];
 }
 
