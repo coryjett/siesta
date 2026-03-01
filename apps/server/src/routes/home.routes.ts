@@ -5,6 +5,7 @@ import { getUserActionItemsAcrossAccounts } from '../services/action-items.servi
 import { getUpcomingMeetings } from '../services/meetings.service.js';
 import { generateInsights, generateCompetitiveAnalysis, generateCompetitorDetail, generateCallCoaching, generateWinLossAnalysis } from '../services/openai-summary.service.js';
 import { listAccounts, getAccountOpportunities } from '../services/mcp-accounts.service.js';
+import { getClosedOpportunities, isCustomer360Configured } from '../services/customer360.service.js';
 import { cachedCall, getCache } from '../services/cache.service.js';
 import { logger } from '../utils/logger.js';
 
@@ -240,7 +241,8 @@ export async function homeRoutes(app: FastifyInstance) {
   /**
    * GET /api/win-loss-analysis
    * AI-generated win/loss analysis from closed opportunities and Gong call briefs.
-   * Cached 4 hours per user.
+   * Fetches closed opps from Customer360 REST API (MCP only returns open opps).
+   * Cached 4 hours shared across all users.
    */
   app.get('/api/win-loss-analysis', async (request, reply) => {
     const userId = request.user.id;
@@ -253,71 +255,100 @@ export async function homeRoutes(app: FastifyInstance) {
     };
 
     try {
-      // Fast path: shared cache (all accounts, not per-user)
+      // Fast path: shared cache
       const cached = await getCache<Record<string, unknown>>('openai:winloss:all');
       if (cached) {
         return reply.send(cached);
       }
 
-      // Cache miss: fetch ALL accounts and their opportunities
-      const allAccountsRaw = await listAccounts();
-      const allAccounts = (allAccountsRaw as Array<Record<string, unknown>>).map((a) => ({
-        id: a.id as string,
-        name: a.name as string,
-      }));
-
-      if (allAccounts.length === 0) {
-        return reply.send(emptyResponse);
-      }
-
-      // Fetch opportunities for all accounts in parallel
-      const oppResults = await Promise.allSettled(
-        allAccounts.map((acct) =>
-          getAccountOpportunities(acct.id).then((opps) => ({
-            accountId: acct.id,
-            accountName: acct.name,
-            opps: opps as Array<Record<string, unknown>>,
-          })),
-        ),
-      );
-
-      // Filter to closed opportunities
-      const closedOpps: Array<{
+      // Try Customer360 REST API first for closed opportunities,
+      // then fall back to MCP (which may only return open pipeline opps)
+      let closedOpps: Array<{
         id: string; name: string; stage: string; amount: number | null;
         closeDate: string | null; isWon: boolean; accountId: string; accountName: string;
       }> = [];
 
-      const allStages = new Set<string>();
-      let totalOpps = 0;
+      const c360Opps = await getClosedOpportunities();
 
-      for (const r of oppResults) {
-        if (r.status === 'fulfilled') {
-          for (const o of r.value.opps) {
-            totalOpps++;
-            const rawStage = String(o.stage ?? o.stageName ?? o.stage_name ?? '');
-            allStages.add(rawStage);
-            const stage = rawStage.toLowerCase();
-            const isClosed = o.isClosed === true || o.is_closed === true || stage.includes('closed');
-            if (!isClosed) continue;
-            const isWon = o.isWon === true || o.is_won === true || stage.includes('closed won');
-            closedOpps.push({
-              id: String(o.id),
-              name: String(o.name ?? ''),
-              stage: rawStage,
-              amount: typeof o.amount === 'number' ? o.amount : (typeof o.arr === 'number' ? o.arr : null),
-              closeDate: (o.closeDate ?? o.close_date ?? null) as string | null,
-              isWon,
-              accountId: r.value.accountId,
-              accountName: r.value.accountName,
-            });
+      if (c360Opps.length > 0) {
+        // Customer360 returned closed opportunities — use them
+        logger.info(
+          { closedCount: c360Opps.length, source: 'customer360' },
+          '[win-loss] Fetched closed opportunities from Customer360 REST API',
+        );
+        closedOpps = c360Opps.map((o) => {
+          const stage = (o.stage_name ?? '').toLowerCase();
+          return {
+            id: String(o.id),
+            name: String(o.name ?? ''),
+            stage: String(o.stage_name ?? ''),
+            amount: typeof o.arr === 'number' ? o.arr : null,
+            closeDate: o.close_date ?? null,
+            isWon: stage.includes('closed won') || stage === 'won',
+            accountId: String(o.company_id ?? ''),
+            accountName: String(o.company_name ?? ''),
+          };
+        });
+      } else {
+        // Fallback: try MCP get_opportunities and filter for closed
+        if (!isCustomer360Configured()) {
+          logger.info('[win-loss] CUSTOMER360_API_KEY not set, falling back to MCP');
+        }
+
+        const allAccountsRaw = await listAccounts();
+        const mcpAccounts = (allAccountsRaw as Array<Record<string, unknown>>).map((a) => ({
+          id: a.id as string,
+          name: a.name as string,
+        }));
+
+        if (mcpAccounts.length > 0) {
+          const oppResults = await Promise.allSettled(
+            mcpAccounts.map((acct) =>
+              getAccountOpportunities(acct.id).then((opps) => ({
+                accountId: acct.id,
+                accountName: acct.name,
+                opps: opps as Array<Record<string, unknown>>,
+              })),
+            ),
+          );
+
+          for (const r of oppResults) {
+            if (r.status === 'fulfilled') {
+              for (const o of r.value.opps) {
+                const rawStage = String(o.stage ?? o.stageName ?? o.stage_name ?? '');
+                const stage = rawStage.toLowerCase();
+                const isClosed = o.isClosed === true || o.is_closed === true || stage.includes('closed');
+                if (!isClosed) continue;
+                const isWon = o.isWon === true || o.is_won === true || stage.includes('closed won');
+                closedOpps.push({
+                  id: String(o.id),
+                  name: String(o.name ?? ''),
+                  stage: rawStage,
+                  amount: typeof o.amount === 'number' ? o.amount : (typeof o.arr === 'number' ? o.arr : null),
+                  closeDate: (o.closeDate ?? o.close_date ?? null) as string | null,
+                  isWon,
+                  accountId: r.value.accountId,
+                  accountName: r.value.accountName,
+                });
+              }
+            }
           }
+
+          logger.info(
+            { closedCount: closedOpps.length, source: 'mcp' },
+            '[win-loss] MCP fallback opportunity scan results',
+          );
         }
       }
 
-      logger.info(
-        { totalOpps, closedCount: closedOpps.length, stages: [...allStages], accountCount: allAccounts.length },
-        '[win-loss] Opportunity scan results',
-      );
+      // Build account list from the closed opps for Gong brief lookups
+      const accountMap = new Map<string, string>();
+      for (const o of closedOpps) {
+        if (o.accountId && o.accountName) {
+          accountMap.set(o.accountId, o.accountName);
+        }
+      }
+      const allAccounts = [...accountMap.entries()].map(([id, name]) => ({ id, name }));
 
       const result = await generateWinLossAnalysis('all', allAccounts, closedOpps);
       return reply.send(result ?? emptyResponse);

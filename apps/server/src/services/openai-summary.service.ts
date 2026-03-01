@@ -1504,7 +1504,7 @@ Given Gong call briefs and POC summaries across multiple customer accounts, anal
 
 IMPORTANT: Solo.io's own products are NOT competitors. This includes: Gloo Gateway, Gloo Mesh, Gloo Network, Gloo Portal, Gloo Platform, Gloo AI Gateway, kgateway, kagent, Agent Gateway (agentgateway), and any product with "Gloo" in the name. Solo.io is also a primary contributor to Istio and Envoy — when these are discussed in the context of Solo.io's offerings (e.g. "Istio with Gloo Mesh", ambient mesh), they are NOT competitors. Never list any Solo.io or Gloo product as a competitor or threat.
 
-Common competitors include (but are not limited to): Kong, NGINX, Apigee, AWS API Gateway, Azure API Management, Linkerd, Consul Connect, Envoy (standalone), F5, Traefik, HashiCorp, Mulesoft, Akamai, Cloudflare, LiteLLM, Portkey, Cilium, Calico, Tetrate, Aspen Mesh, Istio (when discussed as an alternative rather than with Solo.io). Also identify ANY other vendor, product, or open-source project mentioned as a competitor or alternative to Solo.io products, even if not listed here.
+Common competitors include (but are not limited to): Kong, NGINX, Apigee, AWS API Gateway, Azure API Management, GCP Cloud Service Mesh (formerly Traffic Director / Anthos Service Mesh), Google Cloud API Gateway, Linkerd, Consul Connect, Envoy (standalone), F5, Traefik, HashiCorp, Mulesoft, Akamai, Cloudflare, LiteLLM, Portkey, Cilium, Calico, Tetrate, Aspen Mesh, Istio (when discussed as an alternative rather than with Solo.io). Also identify ANY other vendor, product, or open-source project mentioned as a competitor or alternative to Solo.io products, even if not listed here.
 
 Return a JSON object with five arrays:
 
@@ -1526,7 +1526,8 @@ Return a JSON object with five arrays:
 
 5. "marketLandscape": General overview of competitive solutions in the market that compete with Solo.io products, including solutions NOT mentioned in the call data. Cover the broader competitive landscape across API gateways, service mesh, AI gateways, and developer portals.
    Each item: { "name": "competitor or project name", "category": "API Gateway"|"Service Mesh"|"AI Gateway"|"Developer Portal"|"Networking/CNI"|"Multi-product", "description": "1-2 sentence overview of what they offer and their market position", "soloAdvantage": "Solo.io's key advantage over this solution", "threat": "high"|"medium"|"low" }
-   "high" = major market player or actively seen in deals, "medium" = growing presence or niche competitor, "low" = emerging or limited threat. Include 8-15 items covering the full competitive landscape.
+   "high" = major market player or actively seen in deals, "medium" = growing presence or niche competitor, "low" = emerging or limited threat. Include 10-18 items covering the full competitive landscape.
+   IMPORTANT: You MUST include ALL of the following in the market landscape (in addition to any others): Kong, Linkerd, GCP Cloud Service Mesh (formerly Traffic Director / Anthos Service Mesh), Cilium, Tetrate, HashiCorp Consul, F5/NGINX, Traefik, AWS App Mesh, Apigee. These are key competitors that Solo.io encounters regularly.
 
 6. "strategicRecommendations": Cross-cutting strategic guidance on how Solo.io can compete more effectively in the market. These should be actionable recommendations that address competitive dynamics, product positioning, sales strategy, and market trends — not tied to a single account but informed by the patterns you see across the deals and the broader competitive landscape.
    Each item: { "title": "short recommendation title", "detail": "specific, actionable guidance on what to do and why", "priority": "high"|"medium"|"low", "competitors": ["competitor names this recommendation addresses"] }

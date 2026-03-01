@@ -24,6 +24,8 @@ const envSchema = z.object({
   OPENAI_BASE_URL: z.string().default('https://api.openai.com/v1'),
   OPENAI_MODEL: z.string().default('gpt-4o-mini'),
   OPENAI_CHAT_MODEL: z.string().default('gpt-4o'),
+  CUSTOMER360_URL: z.string().default('https://customer360.cs.solo.io'),
+  CUSTOMER360_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
