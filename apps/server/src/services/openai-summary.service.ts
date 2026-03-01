@@ -1168,10 +1168,62 @@ export interface CompetitiveThreat {
   recommendation: string;
 }
 
+export interface CompetitiveBattlecard {
+  competitor: string;
+  category: string;
+  soloStrengths: string[];
+  competitorWeaknesses: string[];
+  differentiators: string[];
+  winStrategy: string;
+}
+
+export interface MarketPlayer {
+  name: string;
+  category: string;
+  description: string;
+  soloAdvantage: string;
+  threat: 'high' | 'medium' | 'low';
+}
+
+export interface StrategicRecommendation {
+  title: string;
+  detail: string;
+  priority: 'high' | 'medium' | 'low';
+  competitors: string[];
+}
+
 export interface CompetitiveAnalysisResult {
   competitorMentions: CompetitorMention[];
   productAlignment: ProductAlignment[];
   competitiveThreats: CompetitiveThreat[];
+  battlecards: CompetitiveBattlecard[];
+  marketLandscape: MarketPlayer[];
+  strategicRecommendations: StrategicRecommendation[];
+}
+
+// ── Competitor Detail types ──
+
+export interface CompetitorDetailResult {
+  competitor: string;
+  category: string;
+  overview: string;
+  soloProduct: string;
+  featureComparison: Array<{
+    feature: string;
+    solo: string;
+    competitor: string;
+    advantage: 'solo' | 'competitor' | 'tie';
+  }>;
+  soloStrengths: string[];
+  competitorStrengths: string[];
+  idealCustomerProfile: string;
+  winStrategy: string;
+  commonObjections: Array<{
+    objection: string;
+    response: string;
+  }>;
+  pricingInsight: string;
+  marketTrend: string;
 }
 
 // ── Win/Loss Analysis types ──
@@ -1454,7 +1506,7 @@ IMPORTANT: Solo.io's own products are NOT competitors. This includes: Gloo Gatew
 
 Common competitors include (but are not limited to): Kong, NGINX, Apigee, AWS API Gateway, Azure API Management, Linkerd, Consul Connect, Envoy (standalone), F5, Traefik, HashiCorp, Mulesoft, Akamai, Cloudflare, LiteLLM, Portkey, Cilium, Calico, Tetrate, Aspen Mesh, Istio (when discussed as an alternative rather than with Solo.io). Also identify ANY other vendor, product, or open-source project mentioned as a competitor or alternative to Solo.io products, even if not listed here.
 
-Return a JSON object with three arrays:
+Return a JSON object with five arrays:
 
 1. "competitorMentions": Competitors discussed across accounts.
    Each item: { "competitor": "name", "accounts": ["account names"], "mentionCount": number, "context": "brief summary of how/why the competitor was discussed", "soloProduct": "which Solo.io product competes (e.g. Gloo Gateway)", "positioning": "how to position Solo.io against this competitor — specific, actionable guidance" }
@@ -1468,7 +1520,19 @@ Return a JSON object with three arrays:
    Each item: { "threat": "description of the competitive threat", "accounts": ["affected account names"], "severity": "high"|"medium"|"low", "recommendation": "specific action to take" }
    "high" = customer actively evaluating a competitor or building DIY alternative, "medium" = competitor or OSS alternative mentioned favorably or being compared, "low" = competitor or alternative mentioned in passing.
 
-Return 0-10 items per array based on what the data supports. Be specific and actionable. Do not fabricate competitor mentions — only report what is present in the call data. Return ONLY valid JSON, no markdown fences or other text.`,
+4. "battlecards": For each competitor mentioned in the calls, generate a competitive battlecard with actionable positioning guidance. Focus on how to WIN against each competitor.
+   Each item: { "competitor": "name", "category": "product category they compete in (e.g. API Gateway, Service Mesh, AI Gateway)", "soloStrengths": ["Solo.io advantages over this competitor — specific, technical, defensible"], "competitorWeaknesses": ["known weaknesses or gaps of this competitor"], "differentiators": ["key technical or business differentiators that set Solo.io apart"], "winStrategy": "1-2 sentence strategy for how to win deals against this competitor" }
+   Be specific and technical. Focus on real product differences, not marketing fluff. Include 3-5 items per sub-array.
+
+5. "marketLandscape": General overview of competitive solutions in the market that compete with Solo.io products, including solutions NOT mentioned in the call data. Cover the broader competitive landscape across API gateways, service mesh, AI gateways, and developer portals.
+   Each item: { "name": "competitor or project name", "category": "API Gateway"|"Service Mesh"|"AI Gateway"|"Developer Portal"|"Networking/CNI"|"Multi-product", "description": "1-2 sentence overview of what they offer and their market position", "soloAdvantage": "Solo.io's key advantage over this solution", "threat": "high"|"medium"|"low" }
+   "high" = major market player or actively seen in deals, "medium" = growing presence or niche competitor, "low" = emerging or limited threat. Include 8-15 items covering the full competitive landscape.
+
+6. "strategicRecommendations": Cross-cutting strategic guidance on how Solo.io can compete more effectively in the market. These should be actionable recommendations that address competitive dynamics, product positioning, sales strategy, and market trends — not tied to a single account but informed by the patterns you see across the deals and the broader competitive landscape.
+   Each item: { "title": "short recommendation title", "detail": "specific, actionable guidance on what to do and why", "priority": "high"|"medium"|"low", "competitors": ["competitor names this recommendation addresses"] }
+   Include 4-8 recommendations covering different aspects: sales tactics, product positioning, messaging, technical differentiation, and market strategy.
+
+Return 0-10 items for arrays 1-4, 8-15 items for array 5, and 4-8 items for array 6. Be specific and actionable. For arrays 1-3, only report what is present in the call data. For arrays 4-6, use your knowledge of the competitive landscape to provide accurate, current intelligence. Return ONLY valid JSON, no markdown fences or other text.`,
           },
           {
             role: 'user',
@@ -1476,7 +1540,7 @@ Return 0-10 items per array based on what the data supports. Be specific and act
           },
         ],
         temperature: 0.3,
-        max_tokens: 3000,
+        max_tokens: 5000,
       });
 
       const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
@@ -1487,9 +1551,107 @@ Return 0-10 items per array based on what the data supports. Be specific and act
         competitorMentions: Array.isArray(parsed.competitorMentions) ? parsed.competitorMentions : [],
         productAlignment: Array.isArray(parsed.productAlignment) ? parsed.productAlignment : [],
         competitiveThreats: Array.isArray(parsed.competitiveThreats) ? parsed.competitiveThreats : [],
+        battlecards: Array.isArray(parsed.battlecards) ? parsed.battlecards : [],
+        marketLandscape: Array.isArray(parsed.marketLandscape) ? parsed.marketLandscape : [],
+        strategicRecommendations: Array.isArray(parsed.strategicRecommendations) ? parsed.strategicRecommendations : [],
       };
     } catch (err) {
       logger.error({ err }, 'Failed to generate competitive analysis with OpenAI');
+      return null;
+    }
+  });
+}
+
+/**
+ * Generate a detailed Solo.io vs competitor comparison for a specific
+ * competitor from the market landscape. Uses general AI knowledge about
+ * the competitor and Solo.io products. Cached 7 days per competitor
+ * (general knowledge, not account-specific).
+ */
+export async function generateCompetitorDetail(
+  competitor: string,
+  category: string,
+): Promise<CompetitorDetailResult | null> {
+  const client = getClient();
+  if (!client) {
+    logger.warn('OpenAI API key not configured, skipping competitor detail');
+    return null;
+  }
+
+  const cacheKey = `openai:competitor-detail:${competitor.toLowerCase().replace(/\s+/g, '-')}`;
+
+  return cachedCall<CompetitorDetailResult | null>(cacheKey, 604800, async () => {
+    try {
+      logger.info({ competitor, category }, '[competitor-detail] Generating detailed analysis');
+
+      const response = await client.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a competitive intelligence analyst specializing in cloud infrastructure, API management, service mesh, and cloud-native networking. You have deep knowledge of Solo.io's products and their competitors.
+
+Solo.io's product portfolio:
+- **Gloo Gateway** (formerly Gloo Edge): Enterprise API gateway built on Envoy Proxy. Features: advanced routing, rate limiting, transformation, external auth, WAF, GraphQL, portal integration.
+- **Gloo Mesh** (formerly Gloo Mesh Enterprise): Enterprise Istio management platform. Multi-cluster service mesh, zero-trust security, traffic management, observability.
+- **Gloo Network**: Enterprise CNI and networking solution based on Cilium. eBPF-based networking, network policy, encryption, observability.
+- **Gloo Portal**: Developer portal for API documentation, onboarding, and self-service API key management.
+- **Gloo AI Gateway**: AI-specific gateway for LLM traffic management, prompt routing, rate limiting, and observability for AI workloads.
+- **Ambient Mesh**: Sidecar-less Istio mesh (ztunnel + waypoint proxies). Solo.io is a primary contributor to Istio ambient mode.
+
+Generate a comprehensive competitive analysis comparing Solo.io vs the specified competitor. Be accurate, specific, and technical. Base your analysis on actual product capabilities and known market positioning.
+
+Return a JSON object:
+{
+  "competitor": "<competitor name>",
+  "category": "<product category>",
+  "overview": "<2-3 sentence overview of the competitor, their primary market, and how they compete with Solo.io>",
+  "soloProduct": "<which Solo.io product most directly competes>",
+  "featureComparison": [
+    { "feature": "<feature or capability name>", "solo": "<Solo.io's capability in this area>", "competitor": "<competitor's capability>", "advantage": "solo"|"competitor"|"tie" }
+  ],
+  "soloStrengths": ["<specific Solo.io advantages over this competitor>"],
+  "competitorStrengths": ["<honest assessment of competitor's advantages>"],
+  "idealCustomerProfile": "<description of the ideal customer profile where Solo.io wins against this competitor>",
+  "winStrategy": "<2-3 sentence strategy for winning deals against this competitor>",
+  "commonObjections": [
+    { "objection": "<common objection customers raise when comparing>", "response": "<effective response to this objection>" }
+  ],
+  "pricingInsight": "<general guidance on how pricing compares and how to position Solo.io's value>",
+  "marketTrend": "<1-2 sentences on where this competitive dynamic is heading>"
+}
+
+Include 8-12 items in featureComparison, 4-6 in soloStrengths and competitorStrengths, and 3-5 in commonObjections. Be balanced and honest — acknowledging competitor strengths builds credibility. Return ONLY valid JSON, no markdown fences or other text.`,
+          },
+          {
+            role: 'user',
+            content: `Generate a detailed competitive analysis: Solo.io vs ${competitor} (category: ${category})`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
+      const jsonStr = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(jsonStr);
+
+      return {
+        competitor: typeof parsed.competitor === 'string' ? parsed.competitor : competitor,
+        category: typeof parsed.category === 'string' ? parsed.category : category,
+        overview: typeof parsed.overview === 'string' ? parsed.overview : '',
+        soloProduct: typeof parsed.soloProduct === 'string' ? parsed.soloProduct : '',
+        featureComparison: Array.isArray(parsed.featureComparison) ? parsed.featureComparison : [],
+        soloStrengths: Array.isArray(parsed.soloStrengths) ? parsed.soloStrengths : [],
+        competitorStrengths: Array.isArray(parsed.competitorStrengths) ? parsed.competitorStrengths : [],
+        idealCustomerProfile: typeof parsed.idealCustomerProfile === 'string' ? parsed.idealCustomerProfile : '',
+        winStrategy: typeof parsed.winStrategy === 'string' ? parsed.winStrategy : '',
+        commonObjections: Array.isArray(parsed.commonObjections) ? parsed.commonObjections : [],
+        pricingInsight: typeof parsed.pricingInsight === 'string' ? parsed.pricingInsight : '',
+        marketTrend: typeof parsed.marketTrend === 'string' ? parsed.marketTrend : '',
+      };
+    } catch (err) {
+      logger.error({ err, competitor }, 'Failed to generate competitor detail with OpenAI');
       return null;
     }
   });

@@ -59,10 +59,37 @@ export interface CompetitiveThreat {
   recommendation: string;
 }
 
+export interface CompetitiveBattlecard {
+  competitor: string;
+  category: string;
+  soloStrengths: string[];
+  competitorWeaknesses: string[];
+  differentiators: string[];
+  winStrategy: string;
+}
+
+export interface MarketPlayer {
+  name: string;
+  category: string;
+  description: string;
+  soloAdvantage: string;
+  threat: 'high' | 'medium' | 'low';
+}
+
+export interface StrategicRecommendation {
+  title: string;
+  detail: string;
+  priority: 'high' | 'medium' | 'low';
+  competitors: string[];
+}
+
 export interface CompetitiveAnalysisResponse {
   competitorMentions: CompetitorMention[];
   productAlignment: ProductAlignment[];
   competitiveThreats: CompetitiveThreat[];
+  battlecards: CompetitiveBattlecard[];
+  marketLandscape: MarketPlayer[];
+  strategicRecommendations: StrategicRecommendation[];
 }
 
 export function useCompetitiveAnalysis() {
@@ -71,6 +98,47 @@ export function useCompetitiveAnalysis() {
     queryFn: () => api.get<CompetitiveAnalysisResponse>('/competitive-analysis'),
     staleTime: 4 * 60 * 60 * 1000, // 4 hours — matches server Redis TTL
     retry: 1,
+  });
+}
+
+// ── Competitor Detail types ──
+
+export interface FeatureComparison {
+  feature: string;
+  solo: string;
+  competitor: string;
+  advantage: 'solo' | 'competitor' | 'tie';
+}
+
+export interface CommonObjection {
+  objection: string;
+  response: string;
+}
+
+export interface CompetitorDetailResponse {
+  competitor: string;
+  category: string;
+  overview: string;
+  soloProduct: string;
+  featureComparison: FeatureComparison[];
+  soloStrengths: string[];
+  competitorStrengths: string[];
+  idealCustomerProfile: string;
+  winStrategy: string;
+  commonObjections: CommonObjection[];
+  pricingInsight: string;
+  marketTrend: string;
+}
+
+export function useCompetitorDetail(competitor: string, category: string) {
+  return useQuery<CompetitorDetailResponse>({
+    queryKey: ['competitor-detail', competitor],
+    queryFn: () => api.get<CompetitorDetailResponse>(
+      `/competitive-analysis/detail?competitor=${encodeURIComponent(competitor)}&category=${encodeURIComponent(category)}`,
+    ),
+    staleTime: 7 * 24 * 60 * 60 * 1000, // 7 days — matches server Redis TTL
+    retry: 1,
+    enabled: !!competitor,
   });
 }
 

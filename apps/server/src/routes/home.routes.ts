@@ -3,7 +3,7 @@ import { requireAuth } from '../auth/guards.js';
 import { getHomepageData } from '../services/mcp-home.service.js';
 import { getUserActionItemsAcrossAccounts } from '../services/action-items.service.js';
 import { getUpcomingMeetings } from '../services/meetings.service.js';
-import { generateInsights, generateCompetitiveAnalysis, generateCallCoaching, generateWinLossAnalysis } from '../services/openai-summary.service.js';
+import { generateInsights, generateCompetitiveAnalysis, generateCompetitorDetail, generateCallCoaching, generateWinLossAnalysis } from '../services/openai-summary.service.js';
 import { listAccounts, getAccountOpportunities } from '../services/mcp-accounts.service.js';
 import { cachedCall, getCache } from '../services/cache.service.js';
 import { logger } from '../utils/logger.js';
@@ -158,6 +158,54 @@ export async function homeRoutes(app: FastifyInstance) {
   });
 
   /**
+   * GET /api/competitive-analysis/detail
+   * Detailed Solo.io vs competitor analysis. Cached 7 days per competitor.
+   */
+  app.get<{
+    Querystring: { competitor: string; category?: string };
+  }>('/api/competitive-analysis/detail', async (request, reply) => {
+    const { competitor, category } = request.query;
+
+    if (!competitor) {
+      return reply.status(400).send({ error: 'competitor query parameter is required' });
+    }
+
+    try {
+      const result = await generateCompetitorDetail(competitor, category ?? 'Unknown');
+      return reply.send(result ?? {
+        competitor,
+        category: category ?? 'Unknown',
+        overview: '',
+        soloProduct: '',
+        featureComparison: [],
+        soloStrengths: [],
+        competitorStrengths: [],
+        idealCustomerProfile: '',
+        winStrategy: '',
+        commonObjections: [],
+        pricingInsight: '',
+        marketTrend: '',
+      });
+    } catch (err) {
+      logger.error({ err, competitor }, '[competitor-detail] Failed to generate competitor detail');
+      return reply.send({
+        competitor,
+        category: category ?? 'Unknown',
+        overview: '',
+        soloProduct: '',
+        featureComparison: [],
+        soloStrengths: [],
+        competitorStrengths: [],
+        idealCustomerProfile: '',
+        winStrategy: '',
+        commonObjections: [],
+        pricingInsight: '',
+        marketTrend: '',
+      });
+    }
+  });
+
+  /**
    * GET /api/call-coaching
    * AI-generated call quality analysis from Gong transcripts.
    * Cached 24 hours per user.
@@ -195,8 +243,6 @@ export async function homeRoutes(app: FastifyInstance) {
    * Cached 4 hours per user.
    */
   app.get('/api/win-loss-analysis', async (request, reply) => {
-    const userName = request.user.name;
-    const userEmail = request.user.email;
     const userId = request.user.id;
     const emptyResponse = {
       summary: '',
@@ -207,27 +253,26 @@ export async function homeRoutes(app: FastifyInstance) {
     };
 
     try {
-      // Fast path: return cached analysis without fetching account data
-      const cached = await getCache<Record<string, unknown>>(`openai:winloss:${userId}`);
+      // Fast path: shared cache (all accounts, not per-user)
+      const cached = await getCache<Record<string, unknown>>('openai:winloss:all');
       if (cached) {
         return reply.send(cached);
       }
 
-      // Cache miss: fetch account data and opportunities
-      const data = await getHomepageData(userName, userEmail);
-
-      const userAccounts = (data.myAccounts ?? []).map((a: Record<string, unknown>) => ({
+      // Cache miss: fetch ALL accounts and their opportunities
+      const allAccountsRaw = await listAccounts();
+      const allAccounts = (allAccountsRaw as Array<Record<string, unknown>>).map((a) => ({
         id: a.id as string,
         name: a.name as string,
       }));
 
-      if (userAccounts.length === 0) {
+      if (allAccounts.length === 0) {
         return reply.send(emptyResponse);
       }
 
-      // Fetch opportunities for user's accounts in parallel
+      // Fetch opportunities for all accounts in parallel
       const oppResults = await Promise.allSettled(
-        userAccounts.map((acct: { id: string; name: string }) =>
+        allAccounts.map((acct) =>
           getAccountOpportunities(acct.id).then((opps) => ({
             accountId: acct.id,
             accountName: acct.name,
@@ -242,17 +287,23 @@ export async function homeRoutes(app: FastifyInstance) {
         closeDate: string | null; isWon: boolean; accountId: string; accountName: string;
       }> = [];
 
+      const allStages = new Set<string>();
+      let totalOpps = 0;
+
       for (const r of oppResults) {
         if (r.status === 'fulfilled') {
           for (const o of r.value.opps) {
-            const stage = String(o.stage ?? '').toLowerCase();
+            totalOpps++;
+            const rawStage = String(o.stage ?? o.stageName ?? o.stage_name ?? '');
+            allStages.add(rawStage);
+            const stage = rawStage.toLowerCase();
             const isClosed = o.isClosed === true || o.is_closed === true || stage.includes('closed');
             if (!isClosed) continue;
             const isWon = o.isWon === true || o.is_won === true || stage.includes('closed won');
             closedOpps.push({
               id: String(o.id),
               name: String(o.name ?? ''),
-              stage: String(o.stage ?? ''),
+              stage: rawStage,
               amount: typeof o.amount === 'number' ? o.amount : (typeof o.arr === 'number' ? o.arr : null),
               closeDate: (o.closeDate ?? o.close_date ?? null) as string | null,
               isWon,
@@ -263,7 +314,12 @@ export async function homeRoutes(app: FastifyInstance) {
         }
       }
 
-      const result = await generateWinLossAnalysis(userId, userAccounts, closedOpps);
+      logger.info(
+        { totalOpps, closedCount: closedOpps.length, stages: [...allStages], accountCount: allAccounts.length },
+        '[win-loss] Opportunity scan results',
+      );
+
+      const result = await generateWinLossAnalysis('all', allAccounts, closedOpps);
       return reply.send(result ?? emptyResponse);
     } catch (err) {
       logger.error({ err, userId }, '[win-loss] Failed to generate win/loss analysis');

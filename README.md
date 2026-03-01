@@ -109,7 +109,7 @@ Sales Engineering portfolio management platform powered by MCP (Model Context Pr
 - **Opportunities** -- Kanban board with fiscal quarter filtering and POC health dots
 - **Meeting Briefs** -- AI-generated prep briefs with talking points and context
 - **Team Resources & Tools** -- Shared bookmarks and tool links for the SE team
-- **Insights** -- Portfolio analytics with AI-generated tabs: Technology Patterns, Conversation Trends, Competitive Analysis (competitor mentions, product alignment, threats), and Call Quality (8 scored dimensions with suggestions, cached 24h)
+- **Insights** -- Portfolio analytics with 5 AI-generated tabs: Technology Patterns, Conversation Trends, Competitive Analysis (battlecards, market landscape with competitor drill-down, threats, strategic recommendations), Call Quality (8 scored dimensions with suggestions), and Win/Loss Analysis (closed opportunity patterns with win/loss factors and recommendations)
 - **Señor Bot** -- AI chat assistant with MCP tool access and support integration
 - **Semantic Search** -- Full-text search across all interactions with inline expansion
 

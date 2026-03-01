@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useInsights, useCompetitiveAnalysis, useCallCoaching, useWinLossAnalysis, useWarmupStatus } from '../../api/queries/insights';
+import { useInsights, useCompetitiveAnalysis, useCompetitorDetail, useCallCoaching, useWinLossAnalysis, useWarmupStatus } from '../../api/queries/insights';
 import { useHomeData } from '../../api/queries/home';
 import { PageLoading } from '../../components/common/loading';
 import Card from '../../components/common/card';
@@ -258,6 +258,7 @@ function CompetitiveAnalysisTab() {
   const { data, isLoading } = useCompetitiveAnalysis();
   const { data: homeData } = useHomeData();
   const warmingMessage = useWarmingMessage();
+  const [expandedCompetitor, setExpandedCompetitor] = useState<{ name: string; category: string } | null>(null);
 
   const accountMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -272,20 +273,30 @@ function CompetitiveAnalysisTab() {
   const mentions = data?.competitorMentions ?? [];
   const alignment = data?.productAlignment ?? [];
   const threats = data?.competitiveThreats ?? [];
+  const battlecards = data?.battlecards ?? [];
+  const landscape = data?.marketLandscape ?? [];
+  const recommendations = data?.strategicRecommendations ?? [];
 
-  if (mentions.length === 0 && alignment.length === 0 && threats.length === 0) {
+  if (mentions.length === 0 && alignment.length === 0 && threats.length === 0 && battlecards.length === 0 && landscape.length === 0) {
     return (
       <EmptyState message="No competitive intelligence detected across your accounts yet. Data is extracted from Gong call briefs." />
     );
   }
 
+  const threatColor = (level: string) =>
+    level === 'high'
+      ? 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+      : level === 'medium'
+        ? 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+        : 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Competitive Threats */}
       {threats.length > 0 && (
         <div className="space-y-3">
           <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
-            Competitive Threats
+            Active Competitive Threats
           </h2>
           {threats.map((threat, idx) => (
             <div
@@ -319,11 +330,135 @@ function CompetitiveAnalysisTab() {
         </div>
       )}
 
-      {/* Competitor Landscape */}
+      {/* Strategic Recommendations */}
+      {recommendations.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+            How to Compete More Effectively
+          </h2>
+          {recommendations.map((rec, idx) => (
+            <div
+              key={idx}
+              className={`rounded-xl border p-5 ${
+                rec.priority === 'high'
+                  ? 'border-[#6b26d9]/30 dark:border-[#8249df]/30 bg-[#6b26d9]/5 dark:bg-[#8249df]/5'
+                  : 'border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b]'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <SeverityBadge severity={rec.priority} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    {rec.title}
+                  </p>
+                  <p className="mt-1.5 text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                    {rec.detail}
+                  </p>
+                  {rec.competitors.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {rec.competitors.map((name) => (
+                        <span
+                          key={name}
+                          className="inline-flex items-center rounded-full border border-[#dedde4] dark:border-[#2a2734] bg-[#eeedf3] dark:bg-[#1e1b29] px-2 py-0.5 text-[10px] font-semibold text-[#6b677e] dark:text-[#858198]"
+                        >
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Competitive Battlecards */}
+      {battlecards.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+            Competitive Battlecards
+          </h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {battlecards.map((card, idx) => (
+              <div
+                key={idx}
+                className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] overflow-hidden"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-[#dedde4] dark:border-[#2a2734] bg-[#f6f5f9] dark:bg-[#1a1825] px-5 py-3">
+                  <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+                    vs {card.competitor}
+                  </h3>
+                  <span className="inline-flex items-center rounded-full border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] px-2 py-0.5 text-[10px] font-semibold text-[#6b677e] dark:text-[#858198]">
+                    {card.category}
+                  </span>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* Win Strategy */}
+                  <div className="rounded-lg bg-[#6b26d9]/5 dark:bg-[#8249df]/10 border border-[#6b26d9]/20 dark:border-[#8249df]/20 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b26d9] dark:text-[#8249df] mb-1">
+                      Win Strategy
+                    </p>
+                    <p className="text-xs text-[#191726] dark:text-[#f2f2f2] leading-relaxed">
+                      {card.winStrategy}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {/* Solo Strengths */}
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-1.5">
+                        Solo.io Strengths
+                      </p>
+                      <div className="space-y-1">
+                        {card.soloStrengths.map((s, i) => (
+                          <div key={i} className="flex items-start gap-1.5">
+                            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-green-500" />
+                            <span className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">{s}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Their Weaknesses */}
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1.5">
+                        Their Weaknesses
+                      </p>
+                      <div className="space-y-1">
+                        {card.competitorWeaknesses.map((w, i) => (
+                          <div key={i} className="flex items-start gap-1.5">
+                            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-red-500" />
+                            <span className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Key Differentiators */}
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b26d9] dark:text-[#8249df] mb-1.5">
+                        Differentiators
+                      </p>
+                      <div className="space-y-1">
+                        {card.differentiators.map((d, i) => (
+                          <div key={i} className="flex items-start gap-1.5">
+                            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#6b26d9] dark:bg-[#8249df]" />
+                            <span className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">{d}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Competitor Mentions from Calls */}
       {mentions.length > 0 && (
         <div className="space-y-3">
           <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
-            Competitor Landscape
+            Competitors in Your Deals
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {mentions.map((mention, idx) => (
@@ -366,6 +501,62 @@ function CompetitiveAnalysisTab() {
         </div>
       )}
 
+      {/* Market Landscape */}
+      {landscape.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">
+            Market Landscape
+          </h2>
+          <div className="rounded-xl border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] overflow-hidden">
+            <div className="grid grid-cols-[1fr_100px_2fr_2fr_60px] gap-3 px-5 py-2.5 border-b border-[#dedde4] dark:border-[#2a2734] bg-[#f6f5f9] dark:bg-[#1a1825]">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">Solution</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">Category</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">Overview</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">Solo.io Advantage</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] text-center">Threat</span>
+            </div>
+            <div className="divide-y divide-[#dedde4]/60 dark:divide-[#2a2734]/60">
+              {landscape.map((player, idx) => {
+                const isExpanded = expandedCompetitor?.name === player.name;
+                return (
+                  <div key={idx}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedCompetitor(isExpanded ? null : { name: player.name, category: player.category })}
+                      className="grid grid-cols-[1fr_100px_2fr_2fr_60px] gap-3 px-5 py-3 items-start w-full text-left hover:bg-[#f6f5f9]/50 dark:hover:bg-[#1a1825]/50 transition-colors cursor-pointer"
+                    >
+                      <span className="text-sm font-semibold text-[#6b26d9] dark:text-[#8249df] flex items-center gap-1.5">
+                        <svg className={`h-3 w-3 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                        </svg>
+                        {player.name}
+                      </span>
+                      <span className="inline-flex items-center rounded-full border border-[#dedde4] dark:border-[#2a2734] bg-[#eeedf3] dark:bg-[#1e1b29] px-2 py-0.5 text-[10px] font-semibold text-[#6b677e] dark:text-[#858198] w-fit">
+                        {player.category}
+                      </span>
+                      <span className="text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+                        {player.description}
+                      </span>
+                      <span className="text-xs text-[#191726] dark:text-[#f2f2f2] leading-relaxed">
+                        {player.soloAdvantage}
+                      </span>
+                      <span className="flex justify-center">
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${threatColor(player.threat)}`}>
+                          {player.threat}
+                        </span>
+                      </span>
+                    </button>
+                    {isExpanded && (
+                      <CompetitorDetailPanel competitor={player.name} category={player.category} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Solo.io Product Alignment */}
       {alignment.length > 0 && (
         <div className="space-y-3">
@@ -402,6 +593,195 @@ function CompetitiveAnalysisTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CompetitorDetailPanel({ competitor, category }: { competitor: string; category: string }) {
+  const { data, isLoading } = useCompetitorDetail(competitor, category);
+
+  if (isLoading) {
+    return (
+      <div className="px-5 py-8 border-t border-[#dedde4]/60 dark:border-[#2a2734]/60 bg-[#f6f5f9]/50 dark:bg-[#1a1825]/50">
+        <div className="flex items-center justify-center gap-2 text-sm text-[#6b677e] dark:text-[#858198]">
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Generating detailed analysis for Solo.io vs {competitor}...
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || !data.overview) {
+    return (
+      <div className="px-5 py-6 border-t border-[#dedde4]/60 dark:border-[#2a2734]/60 bg-[#f6f5f9]/50 dark:bg-[#1a1825]/50">
+        <p className="text-sm text-[#6b677e] dark:text-[#858198] text-center">
+          Unable to generate detailed analysis for {competitor}.
+        </p>
+      </div>
+    );
+  }
+
+  const advantageColor = (adv: string) =>
+    adv === 'solo'
+      ? 'text-green-600 dark:text-green-400'
+      : adv === 'competitor'
+        ? 'text-red-600 dark:text-red-400'
+        : 'text-[#6b677e] dark:text-[#858198]';
+
+  const advantageLabel = (adv: string) =>
+    adv === 'solo' ? 'Solo.io' : adv === 'competitor' ? competitor : 'Tie';
+
+  return (
+    <div className="border-t border-[#dedde4]/60 dark:border-[#2a2734]/60 bg-[#f6f5f9]/30 dark:bg-[#1a1825]/30 px-5 py-5 space-y-5">
+      {/* Overview */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <h3 className="text-sm font-semibold text-[#191726] dark:text-[#f2f2f2]">
+            Solo.io vs {data.competitor}
+          </h3>
+          {data.soloProduct && (
+            <span className="inline-flex items-center rounded-full border border-[#6b26d9]/30 dark:border-[#8249df]/30 bg-[#6b26d9]/5 dark:bg-[#8249df]/10 px-2 py-0.5 text-[10px] font-semibold text-[#6b26d9] dark:text-[#8249df]">
+              {data.soloProduct}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-[#6b677e] dark:text-[#858198] leading-relaxed">
+          {data.overview}
+        </p>
+      </div>
+
+      {/* Feature Comparison */}
+      {data.featureComparison.length > 0 && (
+        <div>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mb-2">
+            Feature Comparison
+          </h4>
+          <div className="rounded-lg border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] overflow-hidden">
+            <div className="grid grid-cols-[1.5fr_2fr_2fr_80px] gap-2 px-4 py-2 border-b border-[#dedde4] dark:border-[#2a2734] bg-[#f6f5f9] dark:bg-[#1a1825]">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198]">Feature</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400">Solo.io</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">{competitor}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] text-center">Edge</span>
+            </div>
+            <div className="divide-y divide-[#dedde4]/40 dark:divide-[#2a2734]/40">
+              {data.featureComparison.map((fc, idx) => (
+                <div key={idx} className="grid grid-cols-[1.5fr_2fr_2fr_80px] gap-2 px-4 py-2.5 items-start">
+                  <span className="text-xs font-medium text-[#191726] dark:text-[#f2f2f2]">{fc.feature}</span>
+                  <span className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">{fc.solo}</span>
+                  <span className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">{fc.competitor}</span>
+                  <span className={`text-[10px] font-bold text-center ${advantageColor(fc.advantage)}`}>
+                    {advantageLabel(fc.advantage)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Strengths side-by-side */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {data.soloStrengths.length > 0 && (
+          <div>
+            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-2">
+              Solo.io Strengths
+            </h4>
+            <div className="space-y-1.5">
+              {data.soloStrengths.map((s, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
+                  <span className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {data.competitorStrengths.length > 0 && (
+          <div>
+            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-2">
+              {competitor} Strengths
+            </h4>
+            <div className="space-y-1.5">
+              {data.competitorStrengths.map((s, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+                  <span className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Win Strategy */}
+      {data.winStrategy && (
+        <div className="rounded-lg bg-[#6b26d9]/5 dark:bg-[#8249df]/10 border border-[#6b26d9]/20 dark:border-[#8249df]/20 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b26d9] dark:text-[#8249df] mb-1">
+            Win Strategy
+          </p>
+          <p className="text-xs text-[#191726] dark:text-[#f2f2f2] leading-relaxed">
+            {data.winStrategy}
+          </p>
+        </div>
+      )}
+
+      {/* Common Objections */}
+      {data.commonObjections.length > 0 && (
+        <div>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mb-2">
+            Common Objections & Responses
+          </h4>
+          <div className="space-y-2">
+            {data.commonObjections.map((obj, idx) => (
+              <div key={idx} className="rounded-lg border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] p-3">
+                <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
+                  "{obj.objection}"
+                </p>
+                <p className="text-[11px] text-[#6b677e] dark:text-[#858198] leading-snug">
+                  {obj.response}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom row: Ideal Customer, Pricing, Market Trend */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {data.idealCustomerProfile && (
+          <div className="rounded-lg bg-[#f6f5f9] dark:bg-[#1a1825] p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mb-1">
+              Ideal Customer for Solo.io
+            </p>
+            <p className="text-[11px] text-[#191726] dark:text-[#f2f2f2] leading-snug">
+              {data.idealCustomerProfile}
+            </p>
+          </div>
+        )}
+        {data.pricingInsight && (
+          <div className="rounded-lg bg-[#f6f5f9] dark:bg-[#1a1825] p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mb-1">
+              Pricing Insight
+            </p>
+            <p className="text-[11px] text-[#191726] dark:text-[#f2f2f2] leading-snug">
+              {data.pricingInsight}
+            </p>
+          </div>
+        )}
+        {data.marketTrend && (
+          <div className="rounded-lg bg-[#f6f5f9] dark:bg-[#1a1825] p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b677e] dark:text-[#858198] mb-1">
+              Market Trend
+            </p>
+            <p className="text-[11px] text-[#191726] dark:text-[#f2f2f2] leading-snug">
+              {data.marketTrend}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
