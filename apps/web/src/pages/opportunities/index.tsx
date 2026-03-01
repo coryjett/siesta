@@ -225,6 +225,7 @@ export default function OpportunitiesPage() {
   const { data: homeData } = useHomeData();
   const [search, setSearch] = useState('');
   const [showClosed, setShowClosed] = useState(false);
+  const [showRenewals, setShowRenewals] = useState(false);
   const [myAccountsOnly, setMyAccountsOnly] = useState(true);
   const quarterOptions = useMemo(() => getQuarterOptions(), []);
   const [quarterFilter, setQuarterFilter] = useState('ALL');
@@ -281,6 +282,15 @@ export default function OpportunitiesPage() {
       filtered = filtered.filter((o) => !o.isClosed);
     }
 
+    // Filter out renewals unless toggled
+    if (!showRenewals) {
+      filtered = filtered.filter((o) => {
+        const type = (o.type ?? '').toLowerCase();
+        const name = o.name.toLowerCase();
+        return !type.includes('renewal') && !name.includes('renewal');
+      });
+    }
+
     // Apply search filter
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -316,7 +326,7 @@ export default function OpportunitiesPage() {
     }
 
     return entries;
-  }, [opportunities, showClosed, search, myAccountsOnly, myAccountIds, quarterFilter, quarterOptions]);
+  }, [opportunities, showClosed, showRenewals, search, myAccountsOnly, myAccountIds, quarterFilter, quarterOptions]);
 
   if (isLoading) return <PageLoading />;
 
@@ -391,6 +401,19 @@ export default function OpportunitiesPage() {
           }`}
         >
           My Accounts
+        </button>
+
+        {/* Renewals toggle */}
+        <button
+          type="button"
+          onClick={() => setShowRenewals(!showRenewals)}
+          className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            showRenewals
+              ? 'bg-[#6b26d9] text-white dark:bg-[#8249df]'
+              : 'border border-[#dedde4] dark:border-[#2a2734] bg-white dark:bg-[#14131b] text-[#6b677e] dark:text-[#858198] hover:bg-[#e9e8ed] dark:hover:bg-[#25232f]'
+          }`}
+        >
+          Renewals
         </button>
 
         {/* Show closed toggle */}
